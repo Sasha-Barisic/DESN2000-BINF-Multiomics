@@ -1,0 +1,18 @@
+<!-- templates/base.html -->
+<!DOCTYPE html>
+<html>
+    <head>
+
+    {% load plotly_dash%}
+ 
+    {% plotly_header %}
+
+    </head>
+    <body>
+
+    {%plotly_direct name="SimpleExample"%}
+
+    </body>
+   
+    {% plotly_footer %}
+</html>
