@@ -7,7 +7,17 @@ import io
 from dash.exceptions import PreventUpdate
 import re
 import pandas as pd
+import plotly.express as px
 
+z = [
+    [0.1, 0.3, 0.5, 0.7, 0.9],
+    [1, 0.8, 0.6, 0.4, 0.2],
+    [0.2, 0, 0.5, 0.7, 0.9],
+    [0.9, 0.8, 0.4, 0.2, 0],
+    [0.3, 0.4, 0.5, 0.7, 1],
+]
+
+fig = px.imshow(z, text_auto=True, aspect="auto")
 
 app = DjangoDash(
     "SimpleExample",
@@ -33,7 +43,7 @@ radio = dbc.Container(
 analysis_layout = dbc.Container(
     [
         dcc.Upload(
-            id="upload-data",
+            id="upload_data",
             children=html.Div(
                 [html.A("Click to upload data.", style={"font-size": "140%"})]
             ),
@@ -49,8 +59,11 @@ analysis_layout = dbc.Container(
                 "background-color": "#D8D8D8",
             },
         ),
-        dcc.Store(id="store"),
-        html.Div(id="output-data-upload"),
+        dcc.Store(id="store", storage_type="memory"),
+        html.Div(id="stored_data_output"),
+        html.Div(
+            id="analysis_output",
+        ),
     ]
 )
 
@@ -78,9 +91,11 @@ app.layout = dbc.Container(
             style={  # "border-bottom": "2px solid black",
                 "background-color": "#D8D8D8",
             },
-            persistence_type="session",
         ),
         html.Br(),
+        html.Div(
+            id="output_layout",
+        ),
         html.Div(
             id="output_layout",
         ),
@@ -90,12 +105,12 @@ app.layout = dbc.Container(
 
 
 @app.callback(
-    Output("output-data-upload", "children"),
-    Input("upload-data", "contents"),
-    State("upload-data", "filename"),
+    Output("stored_data_output", "children"),
+    Input("upload_data", "contents"),
+    State("upload_data", "filename"),
     prevent_initial_call=True,
 )
-def update_output(contents, filename):
+def store_data(contents, filename):
     # If no file provided prevent refrshing ?.
     if contents is None:
         raise PreventUpdate
@@ -116,7 +131,12 @@ def update_output(contents, filename):
     print(df)
     return [
         html.H5(f"The uploaded spreadsheet is: {filename}."),
-        dbc.Button("Filter data", color="primary", className="me-1"),
+        dbc.Button(
+            "Filter data",
+            id="filter_button",
+            n_clicks=0,
+            style={"background-color": "#DC143C"},
+        ),
     ]
 
 
@@ -129,8 +149,10 @@ def switch_tab(tab_chosen):
 
 
 @app.callback(
-    dash.dependencies.Output("output-color", "children"),
-    [dash.dependencies.Input("dropdown-color", "value")],
+    Output("analysis_output", "children"), [Input("filter_button", "n_clicks")]
 )
-def callback_color(dropdown_value):
-    return "The selected color is %s." % dropdown_value
+def on_button_click(n):
+    if n == 0:
+        return "Not clicked."
+    else:
+        return [html.Br(), dcc.Graph(figure=fig)]
