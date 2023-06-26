@@ -61,6 +61,7 @@ analysis_layout = dbc.Container(
             },
         ),
         dcc.Store(id="store"),
+        dcc.Store(id="cleaned_dataset"),
         html.Div(id="stored_data_output"),
         html.Div(
             id="filtered_dataset",
@@ -167,7 +168,7 @@ def store_data(contents, filename):
 
 # Callback to filter the data.
 @app.callback(
-    Output("filtered_dataset", "children"),
+    Output("cleaned_dataset", "data"),
     [Input("store", "data"), Input("filter_button", "n_clicks")],
     prevent_initial_call=True,
 )
@@ -176,14 +177,10 @@ def filter_dataset(*args):
     stored_data = args[0]
     df = pd.read_json(stored_data, orient="split")
 
-    n_clicks = args[1]
+    # Filter the dataset.
+    separate_cols = clean_first(df)
+    clean_cols = clean_folder_change(separate_cols)
+    clean_pqvals = clean_pQ_value(clean_cols, True)
 
-    if n_clicks != 0:
-        # Filter the dataset.
-        separate_cols = clean_first(df)
-        clean_cols = clean_folder_change(separate_cols)
-        clean_pqvals = clean_pQ_value(clean_cols, True)
-
-        return [html.Br(), dcc.Graph(figure=fig)]
-    else:
-        return ["Not clicked"]
+    return clean_pqvals.to_json(date_format="iso", orient="split")
+    # [html.Br(), dcc.Graph(figure=fig)]

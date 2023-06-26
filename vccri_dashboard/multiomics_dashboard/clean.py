@@ -8,7 +8,7 @@ from scipy import stats
 def checkout_columns(columns: list):
     cols_idx = {}
     cols_to_drop = []
-
+    id_cols = []
     for col in columns:
         # Columns that match this format XXN(_X).N
         if re.match("[a-zA-Z0-9_]+\.[0-9]+$", col):
@@ -25,6 +25,8 @@ def checkout_columns(columns: list):
                 "selected_feature", col, re.IGNORECASE
             ):
                 cols_to_drop.append(col)
+            else:
+                id_cols.append(col)
 
     # Sort the entries in the dictionary.
     for key in cols_idx.keys():
@@ -36,12 +38,12 @@ def checkout_columns(columns: list):
     cols_idx.pop("Blank")
     cx_cols = [[i for i in cols_idx[key]] for key in cols_idx.keys()]
 
-    return cols_to_drop, blank_cols, cx_cols
+    return cols_to_drop, blank_cols, cx_cols, id_cols
 
 
 def clean_first(df: pd.DataFrame) -> pd.DataFrame:
     xdf = deepcopy(df)
-    del_cols, blank_cols, _ = checkout_columns(df.columns)
+    del_cols, blank_cols, _, id_cols = checkout_columns(df.columns)
 
     for idx, row in xdf.iterrows():
         blank_value = np.array(row[blank_cols])
@@ -52,12 +54,30 @@ def clean_first(df: pd.DataFrame) -> pd.DataFrame:
 
     cleaned_df = xdf.drop(columns=del_cols)
 
+    # Create unique-ID
+    unique_ids = []
+
+    for _, row in cleaned_df.iterrows():
+        if pd.isna(row[id_cols[0]]):
+            unique_ids.append(row[id_cols[1]])
+        elif pd.isna(row[id_cols[1]]):
+            unique_ids.append(row[id_cols[0]])
+        else:
+            id = f"{row[id_cols[0]]}-{row[id_cols[1]]}"
+            unique_ids.append(id)
+
+    cleaned_df["unique_id"] = unique_ids
+    cleaned_df = cleaned_df.drop(columns=id_cols)
+
+    first_column = cleaned_df.pop("unique_id")
+    cleaned_df.insert(0, "unique_id", first_column)
+
     return cleaned_df
 
 
 def clean_folder_change(df: pd.DataFrame) -> pd.DataFrame:
     xdf = deepcopy(df)
-    del_cols, blank_cols, cx_cols = checkout_columns(df.columns)
+    del_cols, blank_cols, cx_cols, _ = checkout_columns(df.columns)
 
     for idx, row in xdf.iterrows():
         for x in cx_cols:
@@ -73,7 +93,7 @@ def clean_folder_change(df: pd.DataFrame) -> pd.DataFrame:
 
 def clean_pQ_value(df: pd.DataFrame, cleanQv=False) -> pd.DataFrame:
     xdf = deepcopy(df)
-    del_cols, blank_cols, cx_cols = checkout_columns(df.columns)
+    del_cols, blank_cols, cx_cols, _ = checkout_columns(df.columns)
 
     for idx, row in xdf.iterrows():
         pv = []
