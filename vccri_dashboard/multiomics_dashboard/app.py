@@ -8,6 +8,7 @@ from dash.exceptions import PreventUpdate
 import re
 import pandas as pd
 import plotly.express as px
+from .clean import clean_first, clean_folder_change, clean_pQ_value
 
 z = [
     [0.1, 0.3, 0.5, 0.7, 0.9],
@@ -59,10 +60,10 @@ analysis_layout = dbc.Container(
                 "background-color": "#D8D8D8",
             },
         ),
-        dcc.Store(id="store", storage_type="memory"),
+        dcc.Store(id="store"),
         html.Div(id="stored_data_output"),
         html.Div(
-            id="analysis_output",
+            id="filtered_dataset",
         ),
     ]
 )
@@ -70,7 +71,21 @@ analysis_layout = dbc.Container(
 
 app.layout = dbc.Container(
     [
-        html.H1("PLACEHOLDER FOR HEADER"),
+        dbc.NavbarSimple(
+            children=[
+                dbc.NavItem(
+                    dbc.NavLink(
+                        "Github",
+                        href="https://github.com/Sasha-Barisic/DESN2000-BINF-Multiomics",
+                        style={"color": "white"},
+                    )
+                ),
+            ],
+            brand="Multiomics Dashboard",
+            brand_style={"color": "white"},
+            brand_href="#",
+            color="#dc143c",
+        ),
         dbc.Tabs(
             [
                 dbc.Tab(
@@ -96,16 +111,23 @@ app.layout = dbc.Container(
         html.Div(
             id="output_layout",
         ),
-        html.Div(
-            id="output_layout",
-        ),
     ],
     style={"width": "80%"},
 )
 
 
+# Callback to switch between tabs.
+@app.callback(Output("output_layout", "children"), [Input("tabs", "active_tab")])
+def switch_tab(tab_chosen):
+    if tab_chosen == "home_tab":
+        return radio
+    elif tab_chosen == "analysis_tab":
+        return analysis_layout
+
+
+# Callback to store the data into dcc store
 @app.callback(
-    Output("stored_data_output", "children"),
+    [Output("store", "data"), Output("stored_data_output", "children")],
     Input("upload_data", "contents"),
     State("upload_data", "filename"),
     prevent_initial_call=True,
@@ -118,41 +140,50 @@ def store_data(contents, filename):
     # If uploaded file isn't a CSV, print error message
     if not re.search(".csv", str(filename)):
         return [
+            None,
             html.H5(
                 "Invalid file format. Please upload a CSV file.", style={"color": "red"}
-            )
+            ),
         ]
 
     content_type, content_string = contents.split(",")
-    print(content_type)
     decoded = base64.b64decode(content_string)
 
     df = pd.read_csv(io.StringIO(decoded.decode("utf-8")))
-    print(df)
+
     return [
-        html.H5(f"The uploaded spreadsheet is: {filename}."),
-        dbc.Button(
-            "Filter data",
-            id="filter_button",
-            n_clicks=0,
-            style={"background-color": "#DC143C"},
-        ),
+        df.to_json(date_format="iso", orient="split"),
+        [
+            html.H5(f"The uploaded spreadsheet is: {filename}."),
+            dbc.Button(
+                "Filter data",
+                id="filter_button",
+                n_clicks=0,
+                style={"background-color": "#DC143C"},
+            ),
+        ],
     ]
 
 
-@app.callback(Output("output_layout", "children"), [Input("tabs", "active_tab")])
-def switch_tab(tab_chosen):
-    if tab_chosen == "home_tab":
-        return radio
-    elif tab_chosen == "analysis_tab":
-        return analysis_layout
-
-
+# Callback to filter the data.
 @app.callback(
-    Output("analysis_output", "children"), [Input("filter_button", "n_clicks")]
+    Output("filtered_dataset", "children"),
+    [Input("store", "data"), Input("filter_button", "n_clicks")],
+    prevent_initial_call=True,
 )
-def on_button_click(n):
-    if n == 0:
-        return "Not clicked."
-    else:
+def filter_dataset(*args):
+    # Read in the data stored.
+    stored_data = args[0]
+    df = pd.read_json(stored_data, orient="split")
+
+    n_clicks = args[1]
+
+    if n_clicks != 0:
+        # Filter the dataset.
+        separate_cols = clean_first(df)
+        clean_cols = clean_folder_change(separate_cols)
+        clean_pqvals = clean_pQ_value(clean_cols, True)
+
         return [html.Br(), dcc.Graph(figure=fig)]
+    else:
+        return ["Not clicked"]

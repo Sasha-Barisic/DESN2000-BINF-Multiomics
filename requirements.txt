@@ -4,3 +4,4 @@ dpd_static_support
 django-bootstrap4
 pandas
 numpy
+scipy
