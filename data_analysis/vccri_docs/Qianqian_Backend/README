@@ -1,0 +1,33 @@
+## run
+
+#### terminal
+
+* **pip install -r requirements.txt**
+* **python desn2000.py**
+
+#### docker
+
+
+
+## RUL
+
+### file
+
+|                    | example                         | method | data | success                           | fail                                           |
+| ------------------ | ------------------------------- | ------ | ---- | --------------------------------- | ---------------------------------------------- |
+| /upload_file       | http://127.0.0.1/upload_file    | post   |      | {   "ok": true,   "status": 200 } |                                                |
+| /get_file/\<file\> | http://127.0.0.1/get_file/1.csv | get    |      | response file                     | {   "err": "file not exits",   "status": 400 } |
+|                    |                                 |        |      |                                   |                                                |
+|                    |                                 |        |      |
+
+
+
+### data
+
+|                      | example                                                      | method | data | success                      | fail                                           |
+| -------------------- | ------------------------------------------------------------ | ------ | ---- | ---------------------------- | ---------------------------------------------- |
+| /data_clean/\<file\> | http://127.0.0.1:8000/data_clean/annotated_MS_peaks-normalized.xlsx | get    |      | {columns, dataFrame, status} | {   "err": "file not exits",   "status": 400 } |
+|                      |                                                              |        |      |                              |                                                |
+|                      |                                                              |        |      |                              |                                                |
+|                      |                                                              |        |      |                              |                                                |
+
