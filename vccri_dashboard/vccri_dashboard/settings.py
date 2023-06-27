@@ -76,6 +76,7 @@ TEMPLATES = [
     },
 ]
 
+DATA_UPLOAD_MAX_MEMORY_SIZE = None
 WSGI_APPLICATION = "vccri_dashboard.wsgi.application"
 X_FRAME_OPTIONS = "SAMEORIGIN"
 
