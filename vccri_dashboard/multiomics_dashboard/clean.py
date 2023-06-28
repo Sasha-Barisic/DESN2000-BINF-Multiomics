@@ -11,9 +11,10 @@ def checkout_columns(columns: list):
     id_cols = []
     for col in columns:
         # Columns that match this format XXN(_X).N
-        if re.match("[a-zA-Z0-9_]+\.[0-9]+$", col):
-            pre, i = col.split(".")
-
+        # if re.match("[a-zA-Z0-9_]+\.[0-9]+$", col):
+        # print(re.search(r"\.[0-9]+$", col))
+        if re.search(r"\.([0-9]+)$", col):
+            pre, i = col.rsplit(".", 1)
             if pre not in cols_idx.keys():
                 cols_idx[pre] = [col]
             else:

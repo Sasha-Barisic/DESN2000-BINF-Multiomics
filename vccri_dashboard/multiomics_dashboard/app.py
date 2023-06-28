@@ -6,19 +6,20 @@ import base64
 import io
 from dash.exceptions import PreventUpdate
 import re
+import numpy as np
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 from .clean import clean_first, clean_folder_change, clean_pQ_value
 
-z = [
-    [0.1, 0.3, 0.5, 0.7, 0.9],
-    [1, 0.8, 0.6, 0.4, 0.2],
-    [0.2, 0, 0.5, 0.7, 0.9],
-    [0.9, 0.8, 0.4, 0.2, 0],
-    [0.3, 0.4, 0.5, 0.7, 1],
-]
+# z = [
+#     [0.1, 0.3, 0.5, 0.7, 0.9],
+#     [1, 0.8, 0.6, 0.4, 0.2],
+#     [0.2, 0, 0.5, 0.7, 0.9],
+#     [0.9, 0.8, 0.4, 0.2, 0],
+#     [0.3, 0.4, 0.5, 0.7, 1],
+# ]
 
-fig = px.imshow(z, text_auto=True, aspect="auto")
+# fig = px.imshow(z, text_auto=True, aspect="auto")
 
 app = DjangoDash(
     "SimpleExample",
@@ -63,9 +64,8 @@ analysis_layout = dbc.Container(
         dcc.Store(id="store"),
         dcc.Store(id="cleaned_dataset"),
         html.Div(id="stored_data_output"),
-        html.Div(
-            id="filtered_dataset",
-        ),
+        html.Br(),
+        html.Div(id="filtered_dataset"),
     ]
 )
 
@@ -155,32 +155,138 @@ def store_data(contents, filename):
     return [
         df.to_json(date_format="iso", orient="split"),
         [
-            html.H5(f"The uploaded spreadsheet is: {filename}."),
-            dbc.Button(
-                "Filter data",
-                id="filter_button",
-                n_clicks=0,
-                style={"background-color": "#DC143C"},
+            dbc.Container(
+                [
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    html.H5(
+                                        f"The uploaded spreadsheet is: {filename}.",
+                                    ),
+                                ],
+                                width={"size": 10},
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Button(
+                                        "Filter data",
+                                        id="filter_button",
+                                        n_clicks=0,
+                                        style={"background-color": "#DC143C"},
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ]
             ),
         ],
+        # html.H5(f"The uploaded spreadsheet is: {filename}."),
+        # dbc.Button(
+        #     "Filter data",
+        #     id="filter_button",
+        #     n_clicks=0,
+        #     style={"background-color": "#DC143C"},
+        # ),
     ]
+
+
+import plotly.io as pio
+import plotly.express as px
+import plotly.graph_objects as go
 
 
 # Callback to filter the data.
 @app.callback(
-    Output("cleaned_dataset", "data"),
+    [Output("cleaned_dataset", "data"), Output("filtered_dataset", "children")],
     [Input("store", "data"), Input("filter_button", "n_clicks")],
     prevent_initial_call=True,
 )
 def filter_dataset(*args):
-    # Read in the data stored.
-    stored_data = args[0]
-    df = pd.read_json(stored_data, orient="split")
+    clicks = args[-1]
 
-    # Filter the dataset.
-    separate_cols = clean_first(df)
-    clean_cols = clean_folder_change(separate_cols)
-    clean_pqvals = clean_pQ_value(clean_cols, True)
+    if clicks != 0:
+        # Read in the data stored.
+        stored_data = args[0]
+        df = pd.read_json(stored_data, orient="split")
 
-    return clean_pqvals.to_json(date_format="iso", orient="split")
+        # Filter the dataset.
+        separate_cols = clean_first(df)
+        clean_cols = clean_folder_change(separate_cols)
+        clean_pqvals = clean_pQ_value(clean_cols, True)
+
+        # Create heatmap for whole dataset.
+        cols = list(clean_pqvals.columns).remove("unique_id")
+        plot_df = pd.melt(clean_pqvals, id_vars=["unique_id"], value_vars=cols)
+
+        fig = go.Figure(
+            data=go.Heatmap(
+                x=plot_df["variable"],
+                y=plot_df["unique_id"],
+                z=plot_df["value"],
+                type="heatmap",
+                colorscale="Viridis",
+            ),
+        )
+        fig.layout.height = 700
+        fig.layout.width = 1200
+        fig.update_yaxes(tickangle=45, tickfont=dict(color="crimson", size=12))
+
+        return [
+            clean_pqvals.to_json(date_format="iso", orient="split"),
+            [
+                dbc.Container(
+                    [
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dbc.Button(
+                                            "Download filtered dataset",
+                                            id="download_csv_button",
+                                        ),
+                                        dcc.Download(id="download_filtered_data_csv"),
+                                    ],
+                                    width={"offset": 9},
+                                )
+                            ]
+                        ),
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dcc.Graph(figure=fig),
+                                    ]
+                                ),
+                            ]
+                        ),
+                    ],
+                    # style={
+                    #     "border": "1px solid black",
+                    #     "background": "white",
+                    #     # "border-bottom": "2px solid black",
+                    # },
+                )
+            ],
+        ]
+    else:
+        return dash.no_update
     # [html.Br(), dcc.Graph(figure=fig)]
+
+
+# Download filtered dataset on button click.
+@app.callback(
+    Output("download_filtered_data_csv", "data"),
+    [
+        Input("download_csv_button", "n_clicks"),
+        Input("cleaned_dataset", "data"),
+        State("upload_data", "filename"),
+    ],
+    prevent_initial_call=True,
+)
+def func(n_clicks, dataset, filename):
+    df = pd.read_json(dataset, orient="split")
+
+    filtered_filename = filename.split(".")[0] + "_filtered.csv"
+    return dcc.send_data_frame(df.to_csv, filtered_filename)
