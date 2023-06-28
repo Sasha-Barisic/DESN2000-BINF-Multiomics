@@ -12,6 +12,8 @@ from sklearn.cluster import KMeans
 from sklearn.cross_decomposition import PLSRegression
 from scipy.stats import ttest_ind
 from statsmodels.stats.multitest import multipletests
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
 
 def checkout_columns(columns: list):
   cols_idx = {}
@@ -116,78 +118,125 @@ def pairwise_comparison():
 
     # Step 3: Visualize the Data
 
-    # Volcano Plot
-    fold_change = np.log2(db1.mean(axis=1) / db2.mean(axis=1))
-    significance_threshold = 0.05
+    # # Volcano Plot
+    # fold_change = np.log2(db1.mean(axis=1) / db2.mean(axis=1))
+    # significance_threshold = 0.05
 
-    volcano_df = pd.DataFrame({'Fold Change': fold_change, 'p-value': p_values})
-    volcano_df['Significant'] = volcano_df['p-value'] < significance_threshold
+    # volcano_df = pd.DataFrame({'Fold Change': fold_change, 'p-value': p_values})
+    # volcano_df['Significant'] = volcano_df['p-value'] < significance_threshold
 
-    plt.scatter(volcano_df['Fold Change'], -np.log10(volcano_df['p-value']), c=volcano_df['Significant'])
-    plt.xlabel('Fold Change (log2)')
-    plt.ylabel('-log10(p-value)')
-    plt.title('Volcano Plot')
-    plt.show()
+    # plt.scatter(volcano_df['Fold Change'], -np.log10(volcano_df['p-value']), c=volcano_df['Significant'])
+    # plt.xlabel('Fold Change (log2)')
+    # plt.ylabel('-log10(p-value)')
+    # plt.title('Volcano Plot')
+    # plt.show()
 
-    # RandomForest
+    # # RandomForest
+
+    # Extract features (X) and labels (y)
+    # X = clean_df.drop(['CZ.1', 'CZ.2', 'CZ.3', 'CL1.1', 'CL1.2', 'CL1.3'], axis=1)
+    # y = clean_df['CL1.1'].apply(lambda x: 'CZ' if pd.isnull(x) else 'CL1')
+
     db1_cols = list(db1.columns)
     db2_cols = list(db2.columns)
     
     db2_modified = db2.rename(columns = {db2_cols[0]:db1_cols[0], db2_cols[1]:db1_cols[1], db2_cols[2]:db1_cols[2]})
 
-    # features = pd.concat([db1, db2_modified], axis=0)
-    # labels = ['CZ'] * len(db1) + ['CL1'] * len(db2)
-    # rf_classifier = RandomForestClassifier(n_estimators=100, random_state=0)
-    # rf_classifier.fit(features, labels)
-    # fig, axes = plt.subplots(nrows = 1,ncols = 1,figsize = (4,4), dpi=800)
+    features = pd.concat([db1, db2_modified], axis=0)
+    labels = ['CZ'] * len(db1) + ['CL1'] * len(db2)
+    # # Encode labels
+    # le = LabelEncoder()
+    # labels = le.fit_transform(labels)
 
-    # tree.plot_tree(rf_classifier.estimators_[0],
-    #                 feature_names = features, 
-    #                 class_names=labels,
-    #                 filled = True)
-    #print(len(features))
-    #print(len(labels))
+    # # Split the data into training and test sets
+    # X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
 
-    combined_data = pd.concat([db1, db2], axis=1)
+    # # Random Forest Classifier
+    # forest = RandomForestClassifier(n_estimators=100)
+    # forest.fit(X_train, y_train)
+
+    rf_classifier = RandomForestClassifier()
+    rf_classifier.fit(features, labels)
+
+    # Extract the main decision tree
+    main_tree = rf_classifier.estimators_[0]
+
+    # Visualize the main decision tree
+    plt.figure(figsize=(12, 8))
+    tree.plot_tree(main_tree, filled=True, rounded=True)
+    plt.title('Main Decision Tree')
+    plt.show()
+
+    # for i, tree_in_forest in enumerate(rf_classifier.estimators_):
+    #     plt.figure(figsize=(12, 8))
+    #     tree.plot_tree(tree_in_forest, filled=True, rounded=True)
+    #     plt.title('Decision Tree {}'.format(i+1))
+    #     plt.show()
+
+    # # Feature Importances
+    # importances = forest.feature_importances_
+    # indices = np.argsort(importances)[::-1]
+    # feature_names = features.columns
+
+    # # Plot Feature Importances
+    # plt.figure()
+    # plt.title("Random Forest Feature Importances")
+    # plt.bar(range(features.shape[1]), importances[indices], align='center')
+    # plt.xticks(range(features.shape[1]), feature_names[indices], rotation=90)
+    # plt.tight_layout()
+    # plt.show()
+
+    # # rf_classifier = RandomForestClassifier(n_estimators=100, random_state=0)
+    # # rf_classifier.fit(features, labels)
+    # # fig, axes = plt.subplots(nrows = 1,ncols = 1,figsize = (4,4), dpi=800)
+
+    # # tree.plot_tree(rf_classifier.estimators_[0],
+    # #                 feature_names = features, 
+    # #                 class_names=labels,
+    # #                 filled = True)
+    # #print(len(features))
+    # #print(len(labels))
+
+    # combined_data = pd.concat([db1, db2], axis=1)
     
-    # PCA
-    pca = PCA(n_components=2)
-    pca_result = pca.fit_transform(combined_data)
+    # # PCA
+    # pca = PCA(n_components=2)
+    # pca_result = pca.fit_transform(combined_data)
 
-    plt.scatter(pca_result[:, 0], pca_result[:, 1])
-    plt.xlabel('Principal Component 1')
-    plt.ylabel('Principal Component 2')
-    plt.title('PCA')
-    plt.show()
+    # plt.scatter(pca_result[:, 0], pca_result[:, 1])
+    # plt.xlabel('Principal Component 1')
+    # plt.ylabel('Principal Component 2')
+    # plt.title('PCA')
+    # plt.show()
 
-    # Heatmap
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(combined_data, cmap='coolwarm')
-    plt.title('Heatmap')
-    plt.show()
+    # # Heatmap
+    # plt.figure(figsize=(8, 6))
+    # sns.heatmap(combined_data, cmap='coolwarm')
+    # plt.title('Heatmap')
+    # plt.show()
 
-    # K-means
-    kmeans = KMeans(n_clusters=2)
-    kmeans_features = pd.concat([db1, db2], axis=1)
-    kmeans.fit(kmeans_features)
+    # # K-means
+    # kmeans = KMeans(n_clusters=2)
+    # kmeans_features = pd.concat([db1, db2], axis=1)
+    # kmeans.fit(kmeans_features)
 
-    plt.scatter(pca_result[:, 0], pca_result[:, 1], c=kmeans.labels_)
-    plt.xlabel('Principal Component 1')
-    plt.ylabel('Principal Component 2')
-    plt.title('K-means Clustering')
-    plt.show()
+    # plt.scatter(pca_result[:, 0], pca_result[:, 1], c=kmeans.labels_)
+    # plt.xlabel('Principal Component 1')
+    # plt.ylabel('Principal Component 2')
+    # plt.title('K-means Clustering')
+    # plt.show()
 
-    # Ortho-PLSDA
-    plsda = PLSRegression(n_components=2)
-    plsda.fit(db1, db2)
+    # # Ortho-PLSDA
+    # plsda = PLSRegression(n_components=2)
+    # plsda.fit(db1, db2)
 
-    plsda_scores = plsda.transform(db1)
+    # plsda_scores = plsda.transform(db1)
 
-    plt.scatter(plsda_scores[:, 0], plsda_scores[:, 1])
-    plt.xlabel('PLS-DA Component 1')
-    plt.ylabel('PLS-DA Component 2')
-    plt.title('Ortho-PLSDA')
-    plt.show()
+    # plt.scatter(plsda_scores[:, 0], plsda_scores[:, 1])
+    # plt.xlabel('PLS-DA Component 1')
+    # plt.ylabel('PLS-DA Component 2')
+    # plt.title('Ortho-PLSDA')
+    # plt.show()
 
 if __name__ == '__main__':
     pairwise_comparison()
