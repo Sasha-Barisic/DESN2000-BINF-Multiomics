@@ -1,5 +1,5 @@
 import dash
-from dash import dcc, html, Output, Input, State
+from dash import dcc, html, Output, Input, State, ctx
 import dash_bootstrap_components as dbc
 from django_plotly_dash import DjangoDash
 import base64
@@ -62,8 +62,8 @@ analysis_layout = dbc.Container(
                 "background-color": "#D8D8D8",
             },
         ),
-        dcc.Store(id="store"),
-        dcc.Store(id="cleaned_dataset"),
+        dcc.Store(id="store", storage_type="session"),
+        dcc.Store(id="cleaned_dataset", storage_type="session"),
         html.Div(id="stored_data_output"),
         html.Br(),
         html.Div(id="filtered_dataset"),
@@ -173,7 +173,6 @@ def store_data(contents, filename):
                                     dbc.Button(
                                         "Filter data",
                                         id="filter_button",
-                                        n_clicks=0,
                                         style={"background-color": "#DC143C"},
                                     ),
                                 ]
@@ -193,7 +192,6 @@ def store_data(contents, filename):
     ]
 
 
-import plotly.io as pio
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -201,15 +199,13 @@ import plotly.graph_objects as go
 # Callback to filter the data.
 @app.callback(
     [Output("cleaned_dataset", "data"), Output("filtered_dataset", "children")],
-    [Input("store", "data"), Input("filter_button", "n_clicks")],
-    prevent_initial_call=True,
+    Input("filter_button", "n_clicks"),
+    State("store", "data"),
 )
-def filter_dataset(*args):
-    clicks = args[-1]
-
-    if clicks != 0:
+def filter_dataset(clicks, stored_data):
+    # This check always works when callback is fired twice, n_clicks is reset to None after uploading another sheet
+    if clicks is not None:
         # Read in the data stored.
-        stored_data = args[0]
         df = pd.read_json(stored_data, orient="split")
 
         # Filter the dataset.
@@ -221,27 +217,26 @@ def filter_dataset(*args):
         cols = list(clean_pqvals.columns).remove("unique_id")
         plot_df = pd.melt(clean_pqvals, id_vars=["unique_id"], value_vars=cols)
 
-        heatmap_fig = go.Figure(
-            data=go.Heatmap(
-                x=plot_df["variable"],
-                y=plot_df["unique_id"],
-                z=plot_df["value"],
-                type="heatmap",
-                colorscale="Viridis",
-            ),
-        )
-        heatmap_fig.layout.height = 700
-        heatmap_fig.layout.width = 1200
-        heatmap_fig.update_yaxes(tickangle=45, tickfont=dict(color="crimson", size=12))
+        # heatmap_fig = go.Figure(
+        #     data=go.Heatmap(
+        #         x=plot_df["variable"],
+        #         y=plot_df["unique_id"],
+        #         z=plot_df["value"],
+        #         type="heatmap",
+        #         colorscale="Viridis",
+        #     ),
+        # )
+        # heatmap_fig.layout.height = 700
+        # heatmap_fig.layout.width = 1200
+        # heatmap_fig.update_yaxes(tickangle=45, tickfont=dict(color="crimson", size=12))
 
-        # Create PCA plot for whole dataset.
-        pca_df = clean_pqvals.drop(columns=["unique_id"])
-        pca = PCA(n_components=2)
-        pca_result = pca.fit_transform(pca_df)
+        # # Create PCA plot for whole dataset.
+        # pca_df = clean_pqvals.drop(columns=["unique_id"])
+        # pca = PCA(n_components=2)
+        # pca_result = pca.fit_transform(pca_df)
 
-        pca_fig = px.scatter(pca_result[:, 0], pca_result[:, 1])
+        # pca_fig = px.scatter(pca_result[:, 0], pca_result[:, 1])
 
-        print(pca_result)
         return [
             clean_pqvals.to_json(date_format="iso", orient="split"),
             [
@@ -261,24 +256,24 @@ def filter_dataset(*args):
                                 )
                             ]
                         ),
-                        dbc.Row(
-                            [
-                                dbc.Col(
-                                    [
-                                        dcc.Graph(figure=heatmap_fig),
-                                    ]
-                                ),
-                            ]
-                        ),
-                        dbc.Row(
-                            [
-                                dbc.Col(
-                                    [
-                                        dcc.Graph(figure=pca_fig),
-                                    ]
-                                ),
-                            ]
-                        ),
+                        # dbc.Row(
+                        #     [
+                        #         dbc.Col(
+                        #             [
+                        #                 dcc.Graph(figure=heatmap_fig),
+                        #             ]
+                        #         ),
+                        #     ]
+                        # ),
+                        # dbc.Row(
+                        #     [
+                        #         dbc.Col(
+                        #             [
+                        #                 dcc.Graph(figure=pca_fig),
+                        #             ]
+                        #         ),
+                        #     ]
+                        # ),
                     ],
                     # style={
                     #     "border": "1px solid black",
@@ -289,7 +284,7 @@ def filter_dataset(*args):
             ],
         ]
     else:
-        return dash.no_update
+        return [[], []]
     # [html.Br(), dcc.Graph(figure=fig)]
 
 
@@ -298,7 +293,7 @@ def filter_dataset(*args):
     Output("download_filtered_data_csv", "data"),
     [
         Input("download_csv_button", "n_clicks"),
-        Input("cleaned_dataset", "data"),
+        State("cleaned_dataset", "data"),
         State("upload_data", "filename"),
     ],
     prevent_initial_call=True,
@@ -307,4 +302,4 @@ def func(n_clicks, dataset, filename):
     df = pd.read_json(dataset, orient="split")
 
     filtered_filename = filename.split(".")[0] + "_filtered.csv"
-    return dcc.send_data_frame(df.to_csv, filtered_filename)
+    return dcc.send_data_frame(df.to_csv, filtered_filename, index=False)
