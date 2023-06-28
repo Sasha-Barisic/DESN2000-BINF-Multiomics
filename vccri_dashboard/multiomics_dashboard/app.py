@@ -206,6 +206,7 @@ def filter_dataset(clicks, stored_data):
     # This check always works when callback is fired twice, n_clicks is reset to None after uploading another sheet
     if clicks is not None:
         # Read in the data stored.
+
         df = pd.read_json(stored_data, orient="split")
 
         # Filter the dataset.
