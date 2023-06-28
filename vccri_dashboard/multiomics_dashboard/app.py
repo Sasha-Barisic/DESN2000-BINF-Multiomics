@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from .clean import clean_first, clean_folder_change, clean_pQ_value
+from sklearn.decomposition import PCA
 
 # z = [
 #     [0.1, 0.3, 0.5, 0.7, 0.9],
@@ -220,7 +221,7 @@ def filter_dataset(*args):
         cols = list(clean_pqvals.columns).remove("unique_id")
         plot_df = pd.melt(clean_pqvals, id_vars=["unique_id"], value_vars=cols)
 
-        fig = go.Figure(
+        heatmap_fig = go.Figure(
             data=go.Heatmap(
                 x=plot_df["variable"],
                 y=plot_df["unique_id"],
@@ -229,10 +230,18 @@ def filter_dataset(*args):
                 colorscale="Viridis",
             ),
         )
-        fig.layout.height = 700
-        fig.layout.width = 1200
-        fig.update_yaxes(tickangle=45, tickfont=dict(color="crimson", size=12))
+        heatmap_fig.layout.height = 700
+        heatmap_fig.layout.width = 1200
+        heatmap_fig.update_yaxes(tickangle=45, tickfont=dict(color="crimson", size=12))
 
+        # Create PCA plot for whole dataset.
+        pca_df = clean_pqvals.drop(columns=["unique_id"])
+        pca = PCA(n_components=2)
+        pca_result = pca.fit_transform(pca_df)
+
+        pca_fig = px.scatter(pca_result[:, 0], pca_result[:, 1])
+
+        print(pca_result)
         return [
             clean_pqvals.to_json(date_format="iso", orient="split"),
             [
@@ -256,7 +265,16 @@ def filter_dataset(*args):
                             [
                                 dbc.Col(
                                     [
-                                        dcc.Graph(figure=fig),
+                                        dcc.Graph(figure=heatmap_fig),
+                                    ]
+                                ),
+                            ]
+                        ),
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dcc.Graph(figure=pca_fig),
                                     ]
                                 ),
                             ]

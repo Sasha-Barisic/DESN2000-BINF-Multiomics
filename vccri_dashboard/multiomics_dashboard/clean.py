@@ -10,9 +10,6 @@ def checkout_columns(columns: list):
     cols_to_drop = []
     id_cols = []
     for col in columns:
-        # Columns that match this format XXN(_X).N
-        # if re.match("[a-zA-Z0-9_]+\.[0-9]+$", col):
-        # print(re.search(r"\.[0-9]+$", col))
         if re.search(r"\.([0-9]+)$", col):
             pre, i = col.rsplit(".", 1)
             if pre not in cols_idx.keys():
@@ -132,4 +129,15 @@ def clean_pQ_value(df: pd.DataFrame, cleanQv=False) -> pd.DataFrame:
                 if wc:
                     break
 
+    # # Adding the label row to the df
+    # labels = []
+    # samples = list(xdf.columns)
+    # for smpl in samples:
+    #     labels.append(smpl.split(".")[0])
+
+    # xdf.loc[-1] = labels
+    # xdf.index = xdf.index + 1
+    # xdf.sort_index(inplace=True)
+    # # new_xdf = pd.concat([xdf.iloc[:1], label_row, df.iloc[2:]]).reset_index(drop=True)
+    # print(xdf)
     return xdf
