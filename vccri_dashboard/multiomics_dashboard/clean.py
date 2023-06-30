@@ -143,4 +143,7 @@ def clean_pQ_value(df: pd.DataFrame, cleanQv=False) -> pd.DataFrame:
     new_xdf = pd.concat([new_xdf, xdf])
     new_xdf = new_xdf.reset_index(drop=True)
 
+    # # extract from the new_xdf two samples
+    # db1 = new_xdf.filter(regex="CZ|CL1")
+    # db1.to_csv("two_samples.csv", sep=",")
     return new_xdf
