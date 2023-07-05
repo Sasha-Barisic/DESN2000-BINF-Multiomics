@@ -3,7 +3,6 @@ import io
 import math
 import re
 
-
 from dash import dcc, html, Output, Input, State, ctx
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
@@ -13,7 +12,6 @@ import pandas as pd
 import plotly.express as px
 from scipy import stats
 from sklearn.decomposition import PCA
-
 
 from .clean import clean_first, clean_folder_change, clean_pQ_value
 
@@ -72,7 +70,47 @@ analysis_layout = dbc.Container(
         html.Div(id="sample_vs_sample_heatmap"),
         html.Br(),
         dcc.Store(id="pca_result_store"),
-        dbc.Container(id="sample_vs_sample_pca_dropdown"),
+        dbc.Container(
+            [
+                dbc.Row(
+                    [
+                        html.Hr(
+                            style={
+                                "border": "1px solid #000000",
+                            }
+                        ),
+                        html.H4("Chemometrics Analysis"),
+                    ]
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.P("X-axis PC"),
+                                dcc.Dropdown(
+                                    id="pca_1_dropdown",
+                                    options=[],
+                                ),
+                            ],
+                            width={"offset": 2, "size": 2},
+                        ),
+                        dbc.Col(
+                            [
+                                html.P("Y-axis PC"),
+                                dcc.Dropdown(
+                                    id="pca_2_dropdown",
+                                    options=[],
+                                ),
+                            ],
+                            width={"offset": 2, "size": 2},
+                        ),
+                    ]
+                ),
+                dbc.Row([html.Div(id="pca_plot")]),
+            ],
+            id="sample_vs_sample_pca_dropdown",
+            style={"visibility": "hidden"},
+        ),
         html.Br(),
         html.Div(id="sample_vs_sample_pca_res"),
     ]
@@ -190,13 +228,6 @@ def store_data(contents, filename):
                 ]
             ),
         ],
-        # html.H5(f"The uploaded spreadsheet is: {filename}."),
-        # dbc.Button(
-        #     "Filter data",
-        #     id="filter_button",
-        #     n_clicks=0,
-        #     style={"background-color": "#DC143C"},
-        # ),
     ]
 
 
@@ -437,18 +468,40 @@ def heatmap(first_sample, second_sample, dataset):
     ]
 
 
+@app.callback(
+    [
+        Output("pca_1_dropdown", "value"),
+        Output("pca_1_dropdown", "options"),
+        Output("pca_2_dropdown", "value"),
+        Output("pca_2_dropdown", "options"),
+    ],
+    [Input("filter_button", "n_clicks")],
+)
+def populate_pca_dropdown(_):
+    # Create options for the dropdown menu
+    labels = [{"label": lbl + 1, "value": lbl} for lbl in range(0, 4)]
+
+    return labels[0]["value"], labels, labels[1]["value"], labels
+
+
 # Create PCA plot
 @app.callback(
     [
-        Output("sample_vs_sample_pca_dropdown", "children"),
         Output("pca_result_store", "data"),
+        Output("pca_plot", "children"),
+        Output("sample_vs_sample_pca_dropdown", "style"),
     ],
-    [Input("first_sample", "value"), Input("second_sample", "value")],
+    [
+        Input("first_sample", "value"),
+        Input("second_sample", "value"),
+        Input("pca_1_dropdown", "value"),
+        Input("pca_2_dropdown", "value"),
+    ],
     [
         State("cleaned_dataset", "data"),
     ],
 )
-def pca(first_sample, second_sample, dataset):
+def pca(first_sample, second_sample, pca_1, pca_2, dataset):
     # Extract from the data the two samples
     df = pd.read_json(dataset, orient="split")
 
@@ -467,94 +520,23 @@ def pca(first_sample, second_sample, dataset):
     pca_result = pca.fit_transform(df)
     pca_result_df = pd.DataFrame(pca_result)
 
-    # Construct the labels for the dropdown menus
-
-    pca_len = len(pca_result_df.columns)
-    labels = [
-        {"label": lbl + 1, "value": f"first_pca_{lbl}"} for lbl in range(0, pca_len - 2)
-    ]
-    pca_drop_1 = dcc.Dropdown(
-        id="pca_1_dropdown",
-        options=labels,
-    )
-
-    pca_drop_2 = dcc.Dropdown(
-        id="pca_2_dropdown",
-        options=labels,
-    )
-
+    # Add labels to df
     pca_result_df["labels"] = sample_labels
 
-    pca_fig = px.scatter(pca_result_df, x=0, y=1, color=pca_result_df["labels"])
+    # Plot figure.
+    pca_fig = px.scatter(
+        pca_result_df,
+        x=pca_1,
+        y=pca_2,
+        color=pca_result_df["labels"],
+    )
     pca_fig.update_layout(legend_title_text="Sample")
+    pca_fig.update_layout(
+        xaxis_title=f"PC{int(pca_1) + 1}", yaxis_title=f"PC{int(pca_2) + 1}"
+    )
+
     return [
-        [
-            html.Hr(
-                style={
-                    "border": "1px solid #000000",
-                },
-            ),
-            html.Br(),
-            html.H4("Chemometrics Analysis"),
-            html.Br(),
-            dbc.Container(
-                [
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                [
-                                    html.P("X-axis PC"),
-                                    pca_drop_1,
-                                ],
-                                width={"offset": 2, "size": 2},
-                            ),
-                            dbc.Col(
-                                [
-                                    html.P("Y-axis PC"),
-                                    pca_drop_2,
-                                ],
-                                width={"offset": 2, "size": 2},
-                            ),
-                        ]
-                    )
-                ],
-            ),
-        ],
         pca_result_df.to_json(date_format="iso", orient="split"),
+        dcc.Graph(figure=pca_fig),
+        {},
     ]
-
-
-# filter button triggers dropdown generation
-# the dropdown triggers plot generation
-@app.callback(
-    Output("sample_vs_sample_pca_res", "children"),
-    [
-        Input("pca_1_dropdown", "value"),
-        Input("pca_2_dropdown", "value"),
-        Input("pca_result_store", "data"),
-    ],
-)
-def update_pca_graph(pca_1, pca_2, pca_data):
-    # Extract PCA data
-    df = pd.read_json(pca_data, orient="split")
-
-    # Check if values are selected
-    if pca_1 is not None and pca_2 is not None:
-        first_sample = int(pca_1.split("_")[-1])
-        second_sample = int(pca_2.split("_")[-1])
-
-        pca_fig = px.scatter(
-            df,
-            x=first_sample,
-            y=second_sample,
-            color=df["labels"],
-            # labels={
-            #     first_sample: f"PC{first_sample}",
-            #     second_sample: f"PC{second_sample}",
-            # },
-        )
-        pca_fig.update_layout(legend_title_text="Sample")
-
-        return [dcc.Graph(figure=pca_fig)]
-    else:
-        return []
