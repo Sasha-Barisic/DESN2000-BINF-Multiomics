@@ -11,7 +11,6 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.cross_decomposition import PLSRegression
 from scipy.stats import ttest_ind
-from statsmodels.stats.multitest import multipletests
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 import plotly.express as px

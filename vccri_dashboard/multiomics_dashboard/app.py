@@ -1,26 +1,21 @@
-import dash
-from dash import dcc, html, Output, Input, State, ctx
-import dash_bootstrap_components as dbc
-from django_plotly_dash import DjangoDash
 import base64
 import io
-from dash.exceptions import PreventUpdate
+import math
 import re
+
+
+from dash import dcc, html, Output, Input, State, ctx
+from dash.exceptions import PreventUpdate
+import dash_bootstrap_components as dbc
+from django_plotly_dash import DjangoDash
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from .clean import clean_first, clean_folder_change, clean_pQ_value
+import plotly.express as px
+from scipy import stats
 from sklearn.decomposition import PCA
 
-# z = [
-#     [0.1, 0.3, 0.5, 0.7, 0.9],
-#     [1, 0.8, 0.6, 0.4, 0.2],
-#     [0.2, 0, 0.5, 0.7, 0.9],
-#     [0.9, 0.8, 0.4, 0.2, 0],
-#     [0.3, 0.4, 0.5, 0.7, 1],
-# ]
 
-# fig = px.imshow(z, text_auto=True, aspect="auto")
+from .clean import clean_first, clean_folder_change, clean_pQ_value
 
 app = DjangoDash(
     "SimpleExample",
@@ -66,7 +61,20 @@ analysis_layout = dbc.Container(
         dcc.Store(id="cleaned_dataset", storage_type="session"),
         html.Div(id="stored_data_output"),
         html.Br(),
-        html.Div(id="filtered_dataset"),
+        dcc.Loading(
+            html.Div(id="filtered_dataset"),
+            type="cube",
+            color="red",
+        ),
+        html.Br(),
+        html.Div(id="sample_vs_sample_volcano"),
+        html.Br(),
+        html.Div(id="sample_vs_sample_heatmap"),
+        html.Br(),
+        dcc.Store(id="pca_result_store"),
+        dbc.Container(id="sample_vs_sample_pca_dropdown"),
+        html.Br(),
+        html.Div(id="sample_vs_sample_pca_res"),
     ]
 )
 
@@ -148,7 +156,7 @@ def store_data(contents, filename):
             ),
         ]
 
-    content_type, content_string = contents.split(",")
+    _, content_string = contents.split(",")
     decoded = base64.b64decode(content_string)
 
     df = pd.read_csv(io.StringIO(decoded.decode("utf-8")))
@@ -192,10 +200,6 @@ def store_data(contents, filename):
     ]
 
 
-import plotly.express as px
-import plotly.graph_objects as go
-
-
 # Callback to filter the data.
 @app.callback(
     [Output("cleaned_dataset", "data"), Output("filtered_dataset", "children")],
@@ -203,10 +207,10 @@ import plotly.graph_objects as go
     State("store", "data"),
 )
 def filter_dataset(clicks, stored_data):
-    # This check always works when callback is fired twice, n_clicks is reset to None after uploading another sheet
+    # This check always works when callback is fired twice,
+    # n_clicks is reset to None after uploading another sheet
     if clicks is not None:
         # Read in the data stored.
-
         df = pd.read_json(stored_data, orient="split")
 
         # Filter the dataset.
@@ -214,9 +218,24 @@ def filter_dataset(clicks, stored_data):
         clean_cols = clean_folder_change(separate_cols)
         clean_pqvals = clean_pQ_value(clean_cols, True)
 
+        # Create options for the dropdown menu
+        samples = [x.split(".")[0] for x in list(clean_pqvals.columns)]
+        labels = [
+            {"label": lbl, "value": lbl}
+            for lbl in sorted(list(set(samples)))
+            if not re.search("lank|unique_id", lbl)
+        ]
+
+        dropdown_menu_1 = dcc.Dropdown(
+            id="first_sample", options=labels, value=labels[0]["value"]
+        )
+        dropdown_menu_2 = dcc.Dropdown(
+            id="second_sample", options=labels, value=labels[4]["value"]
+        )
+
         # Create heatmap for whole dataset.
-        cols = list(clean_pqvals.columns).remove("unique_id")
-        plot_df = pd.melt(clean_pqvals, id_vars=["unique_id"], value_vars=cols)
+        # cols = list(clean_pqvals.columns).remove("unique_id")
+        # plot_df = pd.melt(clean_pqvals, id_vars=["unique_id"], value_vars=cols)
 
         # heatmap_fig = go.Figure(
         #     data=go.Heatmap(
@@ -241,6 +260,11 @@ def filter_dataset(clicks, stored_data):
         return [
             clean_pqvals.to_json(date_format="iso", orient="split"),
             [
+                html.Hr(
+                    style={
+                        "border": "1px solid #000000",
+                    }
+                ),
                 dbc.Container(
                     [
                         dbc.Row(
@@ -255,6 +279,21 @@ def filter_dataset(clicks, stored_data):
                                     ],
                                     width={"offset": 9},
                                 )
+                            ]
+                        ),
+                        html.Br(),
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dropdown_menu_1,
+                                    ]
+                                ),
+                                dbc.Col(
+                                    [
+                                        dropdown_menu_2,
+                                    ]
+                                ),
                             ]
                         ),
                         # dbc.Row(
@@ -281,12 +320,11 @@ def filter_dataset(clicks, stored_data):
                     #     "background": "white",
                     #     # "border-bottom": "2px solid black",
                     # },
-                )
+                ),
             ],
         ]
     else:
         return [[], []]
-    # [html.Br(), dcc.Graph(figure=fig)]
 
 
 # Download filtered dataset on button click.
@@ -299,8 +337,224 @@ def filter_dataset(clicks, stored_data):
     ],
     prevent_initial_call=True,
 )
-def func(n_clicks, dataset, filename):
+def func(_, dataset, filename):
     df = pd.read_json(dataset, orient="split")
 
     filtered_filename = filename.split(".")[0] + "_filtered.csv"
+    # pylint: disable=no-member
     return dcc.send_data_frame(df.to_csv, filtered_filename, index=False)
+
+
+# Create volcano plot based on selected dropdown feature
+@app.callback(
+    Output("sample_vs_sample_volcano", "children"),
+    [Input("first_sample", "value"), Input("second_sample", "value")],
+    State("cleaned_dataset", "data"),
+)
+def volcano_plot(first_sample, second_sample, dataset):
+    # Extract from the data the two samples
+    df = pd.read_json(dataset, orient="split")
+    # pylint: disable=no-member
+    df = df.iloc[1:]
+
+    first_df = df.filter(regex=f"{first_sample}").astype(float)
+    second_df = df.filter(regex=f"{second_sample}").astype(float)
+    unique_id_series = df.unique_id
+
+    # p-values
+    p_values = []
+    for i in range(len(first_df)):
+        first_values = first_df.iloc[i, :].values
+        first_values = [float(x) for x in first_values]
+        second_values = second_df.iloc[i, :].values
+        second_values = [float(x) for x in second_values]
+        _, p_value = stats.ttest_ind(first_values, second_values)
+        p_values.append(p_value)
+
+    fold_change = np.log2(first_df.mean(axis=1) / second_df.mean(axis=1))
+    significance_threshold = 0.05
+
+    volcano_df = pd.DataFrame({"Fold Change": fold_change, "p-value": p_values})
+
+    sigs = []
+    for _, row in volcano_df.iterrows():
+        if row["p-value"] < significance_threshold and (
+            row["Fold Change"] <= -1 or row["Fold Change"] >= 1
+        ):
+            sigs.append(True)
+        else:
+            sigs.append(False)
+    volcano_df["Significant"] = sigs
+    volcano_df["unique_id"] = unique_id_series
+
+    volcano_df["p-value"] = -np.log10(volcano_df["p-value"])
+
+    volcano_fig = px.scatter(
+        volcano_df,
+        x="Fold Change",
+        y="p-value",
+        color="Significant",
+        hover_data=["unique_id"],
+        labels={"Fold Change": "log2(FC)", "p-value": "-log10(p)"},
+    )
+    volcano_fig.add_vline(x=-1, line_width=2, line_dash="dash", line_color="black")
+    volcano_fig.add_vline(x=1, line_width=2, line_dash="dash", line_color="black")
+    volcano_fig.add_hline(
+        y=-math.log10(0.05), line_width=2, line_dash="dash", line_color="black"
+    )
+
+    return [
+        html.Br(),
+        html.H4("Univariate Analysis"),
+        dcc.Graph(figure=volcano_fig),
+    ]
+
+
+# Create heatmap based on selected dropdown feature
+@app.callback(
+    Output("sample_vs_sample_heatmap", "children"),
+    [Input("first_sample", "value"), Input("second_sample", "value")],
+    State("cleaned_dataset", "data"),
+)
+def heatmap(first_sample, second_sample, dataset):
+    # Extract from the data the two samples
+    df = pd.read_json(dataset, orient="split")
+    # pylint: disable=no-member
+    df = df.iloc[1:]
+    unique_id_series = df.unique_id
+
+    two_samples_df = df.filter(regex=f"{first_sample}|{second_sample}")
+    heatmap_fig = px.imshow(
+        two_samples_df,
+        x=two_samples_df.columns,
+        y=unique_id_series,
+        color_continuous_scale="RdBu",
+    )
+    heatmap_fig.update_layout(width=900, height=500)
+    return [
+        html.Br(),
+        dcc.Graph(figure=heatmap_fig),
+    ]
+
+
+# Create PCA plot
+@app.callback(
+    [
+        Output("sample_vs_sample_pca_dropdown", "children"),
+        Output("pca_result_store", "data"),
+    ],
+    [Input("first_sample", "value"), Input("second_sample", "value")],
+    [
+        State("cleaned_dataset", "data"),
+    ],
+)
+def pca(first_sample, second_sample, dataset):
+    # Extract from the data the two samples
+    df = pd.read_json(dataset, orient="split")
+
+    # pylint: disable=no-member
+    df.set_index("unique_id", inplace=True)
+    df = df.filter(regex=f"{first_sample}|{second_sample}").T
+
+    # Get sample labels
+    sample_labels = list(df.label)
+
+    # Drop column
+    df = df.drop(columns="label")
+
+    # PCA
+    pca = PCA(n_components=6)
+    pca_result = pca.fit_transform(df)
+    pca_result_df = pd.DataFrame(pca_result)
+
+    # Construct the labels for the dropdown menus
+
+    pca_len = len(pca_result_df.columns)
+    labels = [
+        {"label": lbl + 1, "value": f"first_pca_{lbl}"} for lbl in range(0, pca_len - 2)
+    ]
+    pca_drop_1 = dcc.Dropdown(
+        id="pca_1_dropdown",
+        options=labels,
+    )
+
+    pca_drop_2 = dcc.Dropdown(
+        id="pca_2_dropdown",
+        options=labels,
+    )
+
+    pca_result_df["labels"] = sample_labels
+
+    pca_fig = px.scatter(pca_result_df, x=0, y=1, color=pca_result_df["labels"])
+    pca_fig.update_layout(legend_title_text="Sample")
+    return [
+        [
+            html.Hr(
+                style={
+                    "border": "1px solid #000000",
+                },
+            ),
+            html.Br(),
+            html.H4("Chemometrics Analysis"),
+            html.Br(),
+            dbc.Container(
+                [
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    html.P("X-axis PC"),
+                                    pca_drop_1,
+                                ],
+                                width={"offset": 2, "size": 2},
+                            ),
+                            dbc.Col(
+                                [
+                                    html.P("Y-axis PC"),
+                                    pca_drop_2,
+                                ],
+                                width={"offset": 2, "size": 2},
+                            ),
+                        ]
+                    )
+                ],
+            ),
+        ],
+        pca_result_df.to_json(date_format="iso", orient="split"),
+    ]
+
+
+# filter button triggers dropdown generation
+# the dropdown triggers plot generation
+@app.callback(
+    Output("sample_vs_sample_pca_res", "children"),
+    [
+        Input("pca_1_dropdown", "value"),
+        Input("pca_2_dropdown", "value"),
+        Input("pca_result_store", "data"),
+    ],
+)
+def update_pca_graph(pca_1, pca_2, pca_data):
+    # Extract PCA data
+    df = pd.read_json(pca_data, orient="split")
+
+    # Check if values are selected
+    if pca_1 is not None and pca_2 is not None:
+        first_sample = int(pca_1.split("_")[-1])
+        second_sample = int(pca_2.split("_")[-1])
+
+        pca_fig = px.scatter(
+            df,
+            x=first_sample,
+            y=second_sample,
+            color=df["labels"],
+            # labels={
+            #     first_sample: f"PC{first_sample}",
+            #     second_sample: f"PC{second_sample}",
+            # },
+        )
+        pca_fig.update_layout(legend_title_text="Sample")
+
+        return [dcc.Graph(figure=pca_fig)]
+    else:
+        return []
