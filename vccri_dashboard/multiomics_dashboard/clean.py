@@ -10,10 +10,8 @@ def checkout_columns(columns: list):
     cols_to_drop = []
     id_cols = []
     for col in columns:
-        # Columns that match this format XXN(_X).N
-        if re.match("[a-zA-Z0-9_]+\.[0-9]+$", col):
-            pre, i = col.split(".")
-
+        if re.search(r"\.([0-9]+)$", col):
+            pre, i = col.rsplit(".", 1)
             if pre not in cols_idx.keys():
                 cols_idx[pre] = [col]
             else:
@@ -131,4 +129,21 @@ def clean_pQ_value(df: pd.DataFrame, cleanQv=False) -> pd.DataFrame:
                 if wc:
                     break
 
-    return xdf
+    # Adding the label row to the df.
+    labels = []
+    samples = list(xdf.columns)
+    for smpl in samples:
+        if smpl == "unique_id":
+            labels.append("label")
+        else:
+            labels.append(smpl.split(".")[0])
+
+    new_xdf = pd.DataFrame(labels).T
+    new_xdf.columns = samples
+    new_xdf = pd.concat([new_xdf, xdf])
+    new_xdf = new_xdf.reset_index(drop=True)
+    # new_xdf = new_xdf.astype("float")
+    # # extract from the new_xdf two samples
+    # db1 = new_xdf.filter(regex="CZ|CL1|unique_id")
+    # db1.to_csv("two_samples.csv", sep=",", index=False)
+    return new_xdf

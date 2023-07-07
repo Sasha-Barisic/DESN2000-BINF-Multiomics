@@ -1,24 +1,19 @@
-import dash
-from dash import dcc, html, Output, Input, State
-import dash_bootstrap_components as dbc
-from django_plotly_dash import DjangoDash
 import base64
 import io
-from dash.exceptions import PreventUpdate
+import math
 import re
+
+from dash import dcc, html, Output, Input, State, ctx
+from dash.exceptions import PreventUpdate
+import dash_bootstrap_components as dbc
+from django_plotly_dash import DjangoDash
+import numpy as np
 import pandas as pd
 import plotly.express as px
+from scipy import stats
+from sklearn.decomposition import PCA
+
 from .clean import clean_first, clean_folder_change, clean_pQ_value
-
-z = [
-    [0.1, 0.3, 0.5, 0.7, 0.9],
-    [1, 0.8, 0.6, 0.4, 0.2],
-    [0.2, 0, 0.5, 0.7, 0.9],
-    [0.9, 0.8, 0.4, 0.2, 0],
-    [0.3, 0.4, 0.5, 0.7, 1],
-]
-
-fig = px.imshow(z, text_auto=True, aspect="auto")
 
 app = DjangoDash(
     "SimpleExample",
@@ -60,12 +55,64 @@ analysis_layout = dbc.Container(
                 "background-color": "#D8D8D8",
             },
         ),
-        dcc.Store(id="store"),
-        dcc.Store(id="cleaned_dataset"),
+        dcc.Store(id="store", storage_type="session"),
+        dcc.Store(id="cleaned_dataset", storage_type="session"),
         html.Div(id="stored_data_output"),
-        html.Div(
-            id="filtered_dataset",
+        html.Br(),
+        dcc.Loading(
+            html.Div(id="filtered_dataset"),
+            type="cube",
+            color="red",
         ),
+        html.Br(),
+        html.Div(id="sample_vs_sample_volcano"),
+        html.Br(),
+        html.Div(id="sample_vs_sample_heatmap"),
+        html.Br(),
+        dcc.Store(id="pca_result_store"),
+        dbc.Container(
+            [
+                dbc.Row(
+                    [
+                        html.Hr(
+                            style={
+                                "border": "1px solid #000000",
+                            }
+                        ),
+                        html.H4("Chemometrics Analysis"),
+                    ]
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.P("X-axis PC"),
+                                dcc.Dropdown(
+                                    id="pca_1_dropdown",
+                                    options=[],
+                                ),
+                            ],
+                            width={"offset": 2, "size": 2},
+                        ),
+                        dbc.Col(
+                            [
+                                html.P("Y-axis PC"),
+                                dcc.Dropdown(
+                                    id="pca_2_dropdown",
+                                    options=[],
+                                ),
+                            ],
+                            width={"offset": 2, "size": 2},
+                        ),
+                    ]
+                ),
+                dbc.Row([html.Div(id="pca_plot")]),
+            ],
+            id="sample_vs_sample_pca_dropdown",
+            style={"visibility": "hidden"},
+        ),
+        html.Br(),
+        html.Div(id="sample_vs_sample_pca_res"),
     ]
 )
 
@@ -147,7 +194,7 @@ def store_data(contents, filename):
             ),
         ]
 
-    content_type, content_string = contents.split(",")
+    _, content_string = contents.split(",")
     decoded = base64.b64decode(content_string)
 
     df = pd.read_csv(io.StringIO(decoded.decode("utf-8")))
@@ -155,12 +202,30 @@ def store_data(contents, filename):
     return [
         df.to_json(date_format="iso", orient="split"),
         [
-            html.H5(f"The uploaded spreadsheet is: {filename}."),
-            dbc.Button(
-                "Filter data",
-                id="filter_button",
-                n_clicks=0,
-                style={"background-color": "#DC143C"},
+            dbc.Container(
+                [
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    html.H5(
+                                        f"The uploaded spreadsheet is: {filename}.",
+                                    ),
+                                ],
+                                width={"size": 10},
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Button(
+                                        "Filter data",
+                                        id="filter_button",
+                                        style={"background-color": "#DC143C"},
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ]
             ),
         ],
     ]
@@ -168,19 +233,310 @@ def store_data(contents, filename):
 
 # Callback to filter the data.
 @app.callback(
-    Output("cleaned_dataset", "data"),
-    [Input("store", "data"), Input("filter_button", "n_clicks")],
+    [Output("cleaned_dataset", "data"), Output("filtered_dataset", "children")],
+    Input("filter_button", "n_clicks"),
+    State("store", "data"),
+)
+def filter_dataset(clicks, stored_data):
+    # This check always works when callback is fired twice,
+    # n_clicks is reset to None after uploading another sheet
+    if clicks is not None:
+        # Read in the data stored.
+        df = pd.read_json(stored_data, orient="split")
+
+        # Filter the dataset.
+        separate_cols = clean_first(df)
+        clean_cols = clean_folder_change(separate_cols)
+        clean_pqvals = clean_pQ_value(clean_cols, True)
+
+        # Create options for the dropdown menu
+        samples = [x.split(".")[0] for x in list(clean_pqvals.columns)]
+        labels = [
+            {"label": lbl, "value": lbl}
+            for lbl in sorted(list(set(samples)))
+            if not re.search("lank|unique_id", lbl)
+        ]
+
+        dropdown_menu_1 = dcc.Dropdown(
+            id="first_sample", options=labels, value=labels[0]["value"]
+        )
+        dropdown_menu_2 = dcc.Dropdown(
+            id="second_sample", options=labels, value=labels[4]["value"]
+        )
+
+        # Create heatmap for whole dataset.
+        # cols = list(clean_pqvals.columns).remove("unique_id")
+        # plot_df = pd.melt(clean_pqvals, id_vars=["unique_id"], value_vars=cols)
+
+        # heatmap_fig = go.Figure(
+        #     data=go.Heatmap(
+        #         x=plot_df["variable"],
+        #         y=plot_df["unique_id"],
+        #         z=plot_df["value"],
+        #         type="heatmap",
+        #         colorscale="Viridis",
+        #     ),
+        # )
+        # heatmap_fig.layout.height = 700
+        # heatmap_fig.layout.width = 1200
+        # heatmap_fig.update_yaxes(tickangle=45, tickfont=dict(color="crimson", size=12))
+
+        # # Create PCA plot for whole dataset.
+        # pca_df = clean_pqvals.drop(columns=["unique_id"])
+        # pca = PCA(n_components=2)
+        # pca_result = pca.fit_transform(pca_df)
+
+        # pca_fig = px.scatter(pca_result[:, 0], pca_result[:, 1])
+
+        return [
+            clean_pqvals.to_json(date_format="iso", orient="split"),
+            [
+                html.Hr(
+                    style={
+                        "border": "1px solid #000000",
+                    }
+                ),
+                dbc.Container(
+                    [
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dbc.Button(
+                                            "Download filtered dataset",
+                                            id="download_csv_button",
+                                        ),
+                                        dcc.Download(id="download_filtered_data_csv"),
+                                    ],
+                                    width={"offset": 9},
+                                )
+                            ]
+                        ),
+                        html.Br(),
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dropdown_menu_1,
+                                    ]
+                                ),
+                                dbc.Col(
+                                    [
+                                        dropdown_menu_2,
+                                    ]
+                                ),
+                            ]
+                        ),
+                        # dbc.Row(
+                        #     [
+                        #         dbc.Col(
+                        #             [
+                        #                 dcc.Graph(figure=heatmap_fig),
+                        #             ]
+                        #         ),
+                        #     ]
+                        # ),
+                        # dbc.Row(
+                        #     [
+                        #         dbc.Col(
+                        #             [
+                        #                 dcc.Graph(figure=pca_fig),
+                        #             ]
+                        #         ),
+                        #     ]
+                        # ),
+                    ],
+                    # style={
+                    #     "border": "1px solid black",
+                    #     "background": "white",
+                    #     # "border-bottom": "2px solid black",
+                    # },
+                ),
+            ],
+        ]
+    else:
+        return [[], []]
+
+
+# Download filtered dataset on button click.
+@app.callback(
+    Output("download_filtered_data_csv", "data"),
+    [
+        Input("download_csv_button", "n_clicks"),
+        State("cleaned_dataset", "data"),
+        State("upload_data", "filename"),
+    ],
     prevent_initial_call=True,
 )
-def filter_dataset(*args):
-    # Read in the data stored.
-    stored_data = args[0]
-    df = pd.read_json(stored_data, orient="split")
+def func(_, dataset, filename):
+    df = pd.read_json(dataset, orient="split")
 
-    # Filter the dataset.
-    separate_cols = clean_first(df)
-    clean_cols = clean_folder_change(separate_cols)
-    clean_pqvals = clean_pQ_value(clean_cols, True)
+    filtered_filename = filename.split(".")[0] + "_filtered.csv"
+    # pylint: disable=no-member
+    return dcc.send_data_frame(df.to_csv, filtered_filename, index=False)
 
-    return clean_pqvals.to_json(date_format="iso", orient="split")
-    # [html.Br(), dcc.Graph(figure=fig)]
+
+# Create volcano plot based on selected dropdown feature
+@app.callback(
+    Output("sample_vs_sample_volcano", "children"),
+    [Input("first_sample", "value"), Input("second_sample", "value")],
+    State("cleaned_dataset", "data"),
+)
+def volcano_plot(first_sample, second_sample, dataset):
+    # Extract from the data the two samples
+    df = pd.read_json(dataset, orient="split")
+    # pylint: disable=no-member
+    df = df.iloc[1:]
+
+    first_df = df.filter(regex=f"{first_sample}").astype(float)
+    second_df = df.filter(regex=f"{second_sample}").astype(float)
+    unique_id_series = df.unique_id
+
+    # p-values
+    p_values = []
+    for i in range(len(first_df)):
+        first_values = first_df.iloc[i, :].values
+        first_values = [float(x) for x in first_values]
+        second_values = second_df.iloc[i, :].values
+        second_values = [float(x) for x in second_values]
+        _, p_value = stats.ttest_ind(first_values, second_values)
+        p_values.append(p_value)
+
+    fold_change = np.log2(first_df.mean(axis=1) / second_df.mean(axis=1))
+    significance_threshold = 0.05
+
+    volcano_df = pd.DataFrame({"Fold Change": fold_change, "p-value": p_values})
+
+    sigs = []
+    for _, row in volcano_df.iterrows():
+        if row["p-value"] < significance_threshold and (
+            row["Fold Change"] <= -1 or row["Fold Change"] >= 1
+        ):
+            sigs.append(True)
+        else:
+            sigs.append(False)
+    volcano_df["Significant"] = sigs
+    volcano_df["unique_id"] = unique_id_series
+
+    volcano_df["p-value"] = -np.log10(volcano_df["p-value"])
+
+    volcano_fig = px.scatter(
+        volcano_df,
+        x="Fold Change",
+        y="p-value",
+        color="Significant",
+        hover_data=["unique_id"],
+        labels={"Fold Change": "log2(FC)", "p-value": "-log10(p)"},
+    )
+    volcano_fig.add_vline(x=-1, line_width=2, line_dash="dash", line_color="black")
+    volcano_fig.add_vline(x=1, line_width=2, line_dash="dash", line_color="black")
+    volcano_fig.add_hline(
+        y=-math.log10(0.05), line_width=2, line_dash="dash", line_color="black"
+    )
+
+    return [
+        html.Br(),
+        html.H4("Univariate Analysis"),
+        dcc.Graph(figure=volcano_fig),
+    ]
+
+
+# Create heatmap based on selected dropdown feature
+@app.callback(
+    Output("sample_vs_sample_heatmap", "children"),
+    [Input("first_sample", "value"), Input("second_sample", "value")],
+    State("cleaned_dataset", "data"),
+)
+def heatmap(first_sample, second_sample, dataset):
+    # Extract from the data the two samples
+    df = pd.read_json(dataset, orient="split")
+    # pylint: disable=no-member
+    df = df.iloc[1:]
+    unique_id_series = df.unique_id
+
+    two_samples_df = df.filter(regex=f"{first_sample}|{second_sample}")
+    heatmap_fig = px.imshow(
+        two_samples_df,
+        x=two_samples_df.columns,
+        y=unique_id_series,
+        color_continuous_scale="RdBu",
+    )
+    heatmap_fig.update_layout(width=900, height=500)
+    return [
+        html.Br(),
+        dcc.Graph(figure=heatmap_fig),
+    ]
+
+
+@app.callback(
+    [
+        Output("pca_1_dropdown", "value"),
+        Output("pca_1_dropdown", "options"),
+        Output("pca_2_dropdown", "value"),
+        Output("pca_2_dropdown", "options"),
+    ],
+    [Input("filter_button", "n_clicks")],
+)
+def populate_pca_dropdown(_):
+    # Create options for the dropdown menu
+    labels = [{"label": lbl + 1, "value": lbl} for lbl in range(0, 4)]
+
+    return labels[0]["value"], labels, labels[1]["value"], labels
+
+
+# Create PCA plot
+@app.callback(
+    [
+        Output("pca_result_store", "data"),
+        Output("pca_plot", "children"),
+        Output("sample_vs_sample_pca_dropdown", "style"),
+    ],
+    [
+        Input("first_sample", "value"),
+        Input("second_sample", "value"),
+        Input("pca_1_dropdown", "value"),
+        Input("pca_2_dropdown", "value"),
+    ],
+    [
+        State("cleaned_dataset", "data"),
+    ],
+)
+def pca(first_sample, second_sample, pca_1, pca_2, dataset):
+    # Extract from the data the two samples
+    df = pd.read_json(dataset, orient="split")
+
+    # pylint: disable=no-member
+    df.set_index("unique_id", inplace=True)
+    df = df.filter(regex=f"{first_sample}|{second_sample}").T
+
+    # Get sample labels
+    sample_labels = list(df.label)
+
+    # Drop column
+    df = df.drop(columns="label")
+
+    # PCA
+    pca = PCA(n_components=6)
+    pca_result = pca.fit_transform(df)
+    pca_result_df = pd.DataFrame(pca_result)
+
+    # Add labels to df
+    pca_result_df["labels"] = sample_labels
+
+    # Plot figure.
+    pca_fig = px.scatter(
+        pca_result_df,
+        x=pca_1,
+        y=pca_2,
+        color=pca_result_df["labels"],
+    )
+    pca_fig.update_layout(legend_title_text="Sample")
+    pca_fig.update_layout(
+        xaxis_title=f"PC{int(pca_1) + 1}", yaxis_title=f"PC{int(pca_2) + 1}"
+    )
+
+    return [
+        pca_result_df.to_json(date_format="iso", orient="split"),
+        dcc.Graph(figure=pca_fig),
+        {},
+    ]
