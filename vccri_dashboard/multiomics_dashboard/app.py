@@ -791,63 +791,60 @@ def k_means(n_cluster, dataset, clean):
 
 
 # # Create a Random Forest VIP plot.
-# @app.callback(
-#     [
-#         Output("forest_plot", "children"),
-#         Output("sample_vs_sample_random", "style"),
-#     ],
-#     [
-#         Input("first_sample", "value"),
-#         Input("second_sample", "value"),
-#         Input("cleaned_dataset", "data"),
-#     ],
-# )
+@app.callback(
+    [
+        Output("forest_plot", "children"),
+        Output("sample_vs_sample_random", "style"),
+    ],
+    [
+        Input("first_sample", "value"),
+        Input("second_sample", "value"),
+        Input("cleaned_dataset", "data"),
+    ],
+)
 def random_vip(first_sample, second_sample, dataset):
     # Read in data and filter for the two samples.
     # pylint: disable=no-member
     df = pd.read_json(dataset, orient="split")
+    df = df.set_index(
+        "unique_id",
+    )
 
-    df_1 = df.filter(regex=f"unique_id|{first_sample}")
-    df_1 = df_1.iloc[1:]
-    first_col = list(df_1.columns)
+    df = df.filter(regex=f"{first_sample}|{second_sample}").T
+    sample_labels = list(df.label)
+    unique_ids = list(df.columns)
+    unique_ids.remove("label")
 
-    df_2 = df.filter(regex=f"unique_id|{second_sample}")
-    df_2 = df_2.iloc[1:]
+    df.drop(columns=["label"], inplace=True)
 
-    second_col = list(df_2.columns)
+    print(sample_labels)
 
-    rename_cols = {}
-    for i, col in enumerate(first_col):
-        rename_cols[second_col[i]] = col
+    print(df)
 
-    df_2 = df_2.rename(columns=rename_cols)
-
-    # Extract features (X) and labels (y)
-    features = pd.concat([df_1, df_2], axis=0, ignore_index=True).set_index("unique_id")
-    labels = [f"{first_sample}"] * len(df_1) + [f"{second_sample}"] * len(df_2)
-
+    features = df
+    print(features)
     # Encode labels
     encoded_labels = LabelEncoder()
-    enc_labels = encoded_labels.fit_transform(labels)
+    enc_labels = encoded_labels.fit_transform(sample_labels)
 
     # Split the data into training and test sets
     X_train, X_test, y_train, y_test = train_test_split(
-        features, enc_labels, test_size=0.5, shuffle=False
+        features, enc_labels, test_size=0.2, random_state=42
     )
     # Random Forest Classifier
-    forest = RandomForestClassifier(n_estimators=100)
+    forest = RandomForestClassifier(n_estimators=500)
     forest.fit(X_train, y_train)
     results = forest.predict_proba(X_test)
-
-    print(df.unique_id.unique())
-    print(results)
-    print(y_test)
 
     # Feature Importances
     importances = forest.feature_importances_
     indices = np.argsort(importances)[::-1]
     feature_names = features.columns
 
-    forest_fig = px.bar(range(features.shape[1]), importances[indices])
+    new_labels = []
+    for i in range(len(unique_ids)):
+        new_labels.append(unique_ids[indices[i]].split("-")[0])
+
+    forest_fig = px.scatter(y=new_labels, x=np.flip(importances[indices]))
 
     return dcc.Graph(figure=forest_fig), {}
