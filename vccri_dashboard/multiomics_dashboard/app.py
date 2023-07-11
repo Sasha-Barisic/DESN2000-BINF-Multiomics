@@ -19,6 +19,9 @@ from scipy import stats
 from scipy.spatial.distance import pdist
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
 from statsmodels.stats.multitest import fdrcorrection
 
 from .clean import clean_first, clean_folder_change, clean_pQ_value
@@ -257,6 +260,24 @@ analysis_layout = dbc.Container(
                 dbc.Row([html.Div(id="pca_plot")]),
             ],
             id="sample_vs_sample_pca_dropdown",
+            style={"visibility": "hidden"},
+        ),
+        dbc.Container(
+            [
+                dbc.Row(
+                    [
+                        html.Hr(
+                            style={
+                                "border": "1px solid #000000",
+                            }
+                        ),
+                        html.H4("Classification & Feature Selection"),
+                        html.H5("Random Forest"),
+                    ]
+                ),
+                html.Div(id="forest_plot"),
+            ],
+            id="sample_vs_sample_random",
             style={"visibility": "hidden"},
         ),
     ]
@@ -767,3 +788,66 @@ def k_means(n_cluster, dataset, clean):
         dcc.Graph(figure=kmeans_fig),
         {},
     ]
+
+
+# # Create a Random Forest VIP plot.
+# @app.callback(
+#     [
+#         Output("forest_plot", "children"),
+#         Output("sample_vs_sample_random", "style"),
+#     ],
+#     [
+#         Input("first_sample", "value"),
+#         Input("second_sample", "value"),
+#         Input("cleaned_dataset", "data"),
+#     ],
+# )
+def random_vip(first_sample, second_sample, dataset):
+    # Read in data and filter for the two samples.
+    # pylint: disable=no-member
+    df = pd.read_json(dataset, orient="split")
+
+    df_1 = df.filter(regex=f"unique_id|{first_sample}")
+    df_1 = df_1.iloc[1:]
+    first_col = list(df_1.columns)
+
+    df_2 = df.filter(regex=f"unique_id|{second_sample}")
+    df_2 = df_2.iloc[1:]
+
+    second_col = list(df_2.columns)
+
+    rename_cols = {}
+    for i, col in enumerate(first_col):
+        rename_cols[second_col[i]] = col
+
+    df_2 = df_2.rename(columns=rename_cols)
+
+    # Extract features (X) and labels (y)
+    features = pd.concat([df_1, df_2], axis=0, ignore_index=True).set_index("unique_id")
+    labels = [f"{first_sample}"] * len(df_1) + [f"{second_sample}"] * len(df_2)
+
+    # Encode labels
+    encoded_labels = LabelEncoder()
+    enc_labels = encoded_labels.fit_transform(labels)
+
+    # Split the data into training and test sets
+    X_train, X_test, y_train, y_test = train_test_split(
+        features, enc_labels, test_size=0.5, shuffle=False
+    )
+    # Random Forest Classifier
+    forest = RandomForestClassifier(n_estimators=100)
+    forest.fit(X_train, y_train)
+    results = forest.predict_proba(X_test)
+
+    print(df.unique_id.unique())
+    print(results)
+    print(y_test)
+
+    # Feature Importances
+    importances = forest.feature_importances_
+    indices = np.argsort(importances)[::-1]
+    feature_names = features.columns
+
+    forest_fig = px.bar(range(features.shape[1]), importances[indices])
+
+    return dcc.Graph(figure=forest_fig), {}
