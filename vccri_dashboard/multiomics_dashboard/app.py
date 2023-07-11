@@ -4,14 +4,22 @@ import math
 import re
 
 from dash import dcc, html, Output, Input, State, ctx
+import dash_bio as dashbio
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 from django_plotly_dash import DjangoDash
+from functools import partial
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import scipy
 from scipy import stats
+from scipy.spatial.distance import pdist
+from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
+from statsmodels.stats.multitest import fdrcorrection
 
 from .clean import clean_first, clean_folder_change, clean_pQ_value
 
@@ -65,9 +73,149 @@ analysis_layout = dbc.Container(
             color="red",
         ),
         html.Br(),
-        html.Div(id="sample_vs_sample_volcano"),
+        dbc.Container(
+            [
+                html.H4("Univariate Analysis"),
+                html.H5("Volcano Plot"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.RadioItems(
+                                    options=[
+                                        {"label": "Raw", "value": "raw"},
+                                        {"label": "FDR", "value": "fdr"},
+                                    ],
+                                    value="raw",
+                                    id="volcano_radioitems",
+                                    inline=True,
+                                ),
+                            ],
+                            width={"offset": 5},
+                        )
+                    ],
+                ),
+                html.Div(id="volcano_plot"),
+            ],
+            id="sample_vs_sample_volcano",
+            style={"visibility": "hidden"},
+        ),
         html.Br(),
-        html.Div(id="sample_vs_sample_heatmap"),
+        dbc.Container(
+            [
+                html.H4("Cluster Analysis"),
+                html.H5("Hierarchical Clustering: Heatmap"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.P("Standardization"),
+                                dcc.Dropdown(
+                                    options=[
+                                        {
+                                            "label": "Autoscale features",
+                                            "value": "column",
+                                        },
+                                        {
+                                            "label": "Autoscale samples",
+                                            "value": "row",
+                                        },
+                                        {"label": "None", "value": "none"},
+                                    ],
+                                    value="none",
+                                    id="standardization",
+                                ),
+                            ]
+                        ),
+                        dbc.Col(
+                            [
+                                html.P("Distance measure"),
+                                dcc.Dropdown(
+                                    options=[
+                                        {
+                                            "label": "Correlation",
+                                            "value": "correlation",
+                                        },
+                                        {
+                                            "label": "Euclidean",
+                                            "value": "euclidean",
+                                        },
+                                        {
+                                            "label": "Minkowski",
+                                            "value": "minkowski",
+                                        },
+                                    ],
+                                    value="euclidean",
+                                    id="distance",
+                                ),
+                            ]
+                        ),
+                        dbc.Col(
+                            [
+                                html.P("Clustering method"),
+                                dcc.Dropdown(
+                                    options=[
+                                        {
+                                            "label": "Average",
+                                            "value": "average",
+                                        },
+                                        {
+                                            "label": "Complete",
+                                            "value": "complete",
+                                        },
+                                        {
+                                            "label": "Single",
+                                            "value": "single",
+                                        },
+                                        {
+                                            "label": "Ward",
+                                            "value": "ward",
+                                        },
+                                    ],
+                                    value="ward",
+                                    id="clustering",
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+                html.Div(id="heatmap_plot"),
+            ],
+            id="sample_vs_sample_heatmap",
+            style={"visibility": "hidden"},
+        ),
+        html.Br(),
+        dbc.Container(
+            [
+                dbc.Row(
+                    [
+                        html.H5("Partitional Clustering: K-Means"),
+                    ]
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.P("Cluster number (max = 6)"),
+                                dbc.Input(
+                                    id="cluster_value",
+                                    type="number",
+                                    min=0,
+                                    max=6,
+                                    step=1,
+                                    value=2,
+                                ),
+                            ],
+                            width={"offset": 2, "size": 2},
+                        ),
+                    ]
+                ),
+                html.Br(),
+                html.Div(id="k_means_plot"),
+            ],
+            id="sample_vs_sample_k_means",
+            style={"visibility": "hidden"},
+        ),
         html.Br(),
         dcc.Store(id="pca_result_store"),
         dbc.Container(
@@ -111,8 +259,6 @@ analysis_layout = dbc.Container(
             id="sample_vs_sample_pca_dropdown",
             style={"visibility": "hidden"},
         ),
-        html.Br(),
-        html.Div(id="sample_vs_sample_pca_res"),
     ]
 )
 
@@ -378,11 +524,15 @@ def func(_, dataset, filename):
 
 # Create volcano plot based on selected dropdown feature
 @app.callback(
-    Output("sample_vs_sample_volcano", "children"),
-    [Input("first_sample", "value"), Input("second_sample", "value")],
+    [Output("sample_vs_sample_volcano", "style"), Output("volcano_plot", "children")],
+    [
+        Input("first_sample", "value"),
+        Input("second_sample", "value"),
+        Input("volcano_radioitems", "value"),
+    ],
     State("cleaned_dataset", "data"),
 )
-def volcano_plot(first_sample, second_sample, dataset):
+def volcano_plot(first_sample, second_sample, p_option, dataset):
     # Extract from the data the two samples
     df = pd.read_json(dataset, orient="split")
     # pylint: disable=no-member
@@ -401,6 +551,12 @@ def volcano_plot(first_sample, second_sample, dataset):
         second_values = [float(x) for x in second_values]
         _, p_value = stats.ttest_ind(first_values, second_values)
         p_values.append(p_value)
+
+    # If FDR is selected
+    if p_option == "fdr":
+        p_values = fdrcorrection(p_values, alpha=0.05, method="indep", is_sorted=False)[
+            1
+        ]
 
     fold_change = np.log2(first_df.mean(axis=1) / second_df.mean(axis=1))
     significance_threshold = 0.05
@@ -434,35 +590,51 @@ def volcano_plot(first_sample, second_sample, dataset):
         y=-math.log10(0.05), line_width=2, line_dash="dash", line_color="black"
     )
 
-    return [
+    return {}, [
         html.Br(),
-        html.H4("Univariate Analysis"),
         dcc.Graph(figure=volcano_fig),
     ]
 
 
 # Create heatmap based on selected dropdown feature
 @app.callback(
-    Output("sample_vs_sample_heatmap", "children"),
-    [Input("first_sample", "value"), Input("second_sample", "value")],
+    [Output("sample_vs_sample_heatmap", "style"), Output("heatmap_plot", "children")],
+    [
+        Input("first_sample", "value"),
+        Input("second_sample", "value"),
+        Input("standardization", "value"),
+        Input("distance", "value"),
+        Input("clustering", "value"),
+    ],
     State("cleaned_dataset", "data"),
 )
-def heatmap(first_sample, second_sample, dataset):
+def heatmap(first_sample, second_sample, stand, distance, cluster, dataset):
     # Extract from the data the two samples
     df = pd.read_json(dataset, orient="split")
     # pylint: disable=no-member
     df = df.iloc[1:]
-    unique_id_series = df.unique_id
 
-    two_samples_df = df.filter(regex=f"{first_sample}|{second_sample}")
-    heatmap_fig = px.imshow(
-        two_samples_df,
-        x=two_samples_df.columns,
-        y=unique_id_series,
-        color_continuous_scale="RdBu",
+    two_samples_df = (
+        df.filter(regex=f"unique_id|{first_sample}|{second_sample}")
+        .set_index("unique_id")
+        .astype("float")
     )
-    heatmap_fig.update_layout(width=900, height=500)
-    return [
+    heatmap_array = two_samples_df.to_numpy()
+    rows = [x.split("-")[0] for x in list(two_samples_df.index)]
+    columns = list(two_samples_df.columns.values)
+
+    heatmap_fig = dashbio.Clustergram(
+        data=heatmap_array,
+        row_labels=rows,
+        column_labels=columns,
+        standardize=stand,
+        dist_fun=partial(pdist, metric=distance),
+        link_method=cluster,
+        color_threshold={"row": 250, "col": 700},
+        height=800,
+        width=1100,
+    )
+    return {}, [
         html.Br(),
         dcc.Graph(figure=heatmap_fig),
     ]
@@ -538,5 +710,60 @@ def pca(first_sample, second_sample, pca_1, pca_2, dataset):
     return [
         pca_result_df.to_json(date_format="iso", orient="split"),
         dcc.Graph(figure=pca_fig),
+        {},
+    ]
+
+
+# Create a K-means plot.
+@app.callback(
+    [
+        Output("k_means_plot", "children"),
+        Output("sample_vs_sample_k_means", "style"),
+    ],
+    [
+        Input("cluster_value", "value"),
+        Input("pca_result_store", "data"),
+    ],
+    [
+        State("cleaned_dataset", "data"),
+    ],
+)
+def k_means(n_cluster, dataset, clean):
+    # Extract from the data the two samples
+    # pylint: disable=no-member
+    df = pd.read_json(dataset, orient="split")
+
+    df.drop(columns="labels", inplace=True)
+    # Initialize the class object
+    kmeans = KMeans(n_clusters=n_cluster)
+
+    # predict the labels of clusters.
+    label = kmeans.fit_predict(df)
+    unique_label = np.unique(kmeans.fit_predict(df))
+
+    traces = []
+    for i, u_lbl in enumerate(unique_label):
+        filtered_labels = df[label == u_lbl]
+
+        traces.append(
+            go.Scatter(
+                x=filtered_labels[0],
+                y=filtered_labels[1],
+                mode="markers",
+                name=f"Cluster {i}",
+            )
+        )
+
+    kmeans_fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    for tr in traces:
+        kmeans_fig.add_trace(tr)
+
+    kmeans_fig.update_layout(
+        xaxis_title="PC1", yaxis_title="PC2", legend_title="Clusters"
+    )
+
+    return [
+        dcc.Graph(figure=kmeans_fig),
         {},
     ]
