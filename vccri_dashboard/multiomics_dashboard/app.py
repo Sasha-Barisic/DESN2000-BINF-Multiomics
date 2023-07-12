@@ -47,6 +47,8 @@ radio = dbc.Container(
     ]
 )
 
+
+### ANALYSIS TAB LAYOUT ###
 analysis_layout = (
     dbc.Container(
         [
@@ -194,6 +196,38 @@ analysis_layout = (
                     ),
                 ],
                 id="global_heatmap_section",
+                style={"visibility": "hidden"},
+            ),
+            dbc.Container(
+                [
+                    html.H5("Principle Component Analysis (PCA)"),
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    html.P("X-axis PC"),
+                                    dcc.Dropdown(
+                                        id="pca_1_dropdown_gl",
+                                        options=[],
+                                    ),
+                                ],
+                                width={"offset": 2, "size": 2},
+                            ),
+                            dbc.Col(
+                                [
+                                    html.P("Y-axis PC"),
+                                    dcc.Dropdown(
+                                        id="pca_2_dropdown_gl",
+                                        options=[],
+                                    ),
+                                ],
+                                width={"offset": 2, "size": 2},
+                            ),
+                        ]
+                    ),
+                    dbc.Row([html.Div(id="pca_plot_gl")]),
+                ],
+                id="global_pca_dropdown",
                 style={"visibility": "hidden"},
             ),
             dcc.Loading(
@@ -357,6 +391,7 @@ analysis_layout = (
                                 }
                             ),
                             html.H4("Chemometrics Analysis"),
+                            html.H5("Principle Component Analysis (PCA)"),
                         ]
                     ),
                     dbc.Row(
@@ -410,6 +445,8 @@ analysis_layout = (
     ),
 )
 
+
+### APP LAYOUT ###
 app.layout = dbc.Container(
     [
         dbc.NavbarSimple(
@@ -464,6 +501,9 @@ def switch_tab(tab_chosen):
         return radio
     elif tab_chosen == "analysis_tab":
         return analysis_layout
+
+
+### UPLOADING AND STORING DATA ###
 
 
 # Callback to store the data into dcc store
@@ -524,23 +564,47 @@ def store_data(contents, filename):
     ]
 
 
-# Callback to filter the data.
+### PCA FOR WHOLE DATASET ###
+
+
+# Callback to dynamically geenrate labels for pca dropwdown.
+@app.callback(
+    [
+        Output("pca_1_dropdown_gl", "value"),
+        Output("pca_1_dropdown_gl", "options"),
+        Output("pca_2_dropdown_gl", "value"),
+        Output("pca_2_dropdown_gl", "options"),
+    ],
+    [Input("filter_button", "n_clicks")],
+)
+def populate_global_pca_dropdown(_):
+    # Create options for the dropdown menu
+    labels = [{"label": lbl + 1, "value": lbl} for lbl in range(0, 8)]
+
+    return labels[0]["value"], labels, labels[1]["value"], labels
+
+
+# Callback to filter the data, generate heatmap and PCA for whole dataset.
 @app.callback(
     [
         Output("cleaned_dataset", "data"),
         Output("filtered_dataset", "children"),
         Output("global_heatmap_section", "style"),
         Output("global_heatmap", "children"),
+        Output("global_pca_dropdown", "style"),
+        Output("pca_plot_gl", "children"),
     ],
     [
         Input("filter_button", "n_clicks"),
         Input("global_standardization", "value"),
         Input("global_distance", "value"),
         Input("global_clustering", "value"),
+        Input("pca_1_dropdown_gl", "value"),
+        Input("pca_2_dropdown_gl", "value"),
     ],
     State("store", "data"),
 )
-def filter_dataset(clicks, gl_std, gl_dist, gl_cl, stored_data):
+def filter_dataset(clicks, gl_std, gl_dist, gl_cl, pca_1_gl, pca_2_gl, stored_data):
     # This check always works when callback is fired twice,
     # n_clicks is reset to None after uploading another sheet
     if clicks is not None:
@@ -567,6 +631,7 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, stored_data):
             id="second_sample", options=labels, value=labels[4]["value"]
         )
 
+        # Heatmap for whole dataset.
         heatmap_df = clean_pqvals.iloc[1:].set_index("unique_id").astype("float")
 
         gl_heatmap_array = heatmap_df.to_numpy()
@@ -592,12 +657,36 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, stored_data):
             ],
         )
 
-        # # Create PCA plot for whole dataset.
-        # pca_df = clean_pqvals.drop(columns=["unique_id"])
-        # pca = PCA(n_components=2)
-        # pca_result = pca.fit_transform(pca_df)
+        # Create PCA plot for whole dataset.
+        # pylint: disable=no-member
+        pca_gl_df = clean_pqvals.set_index("unique_id").T
 
-        # pca_fig = px.scatter(pca_result[:, 0], pca_result[:, 1])
+        # Get sample labels and length of unique lbls.
+        sample_labels_gl = list(pca_gl_df.label)
+        unique_label_len = len(list(set(list(pca_gl_df.label))))
+
+        # Drop column label
+        pca_gl_df = pca_gl_df.drop(columns="label")
+
+        # PCA
+        pca = PCA(n_components=unique_label_len)
+        pca_result_gl = pca.fit_transform(pca_gl_df)
+        pca_result_df_gl = pd.DataFrame(pca_result_gl)
+
+        # Add labels to df
+        pca_result_df_gl["labels"] = sample_labels_gl
+
+        # Plot figure.
+        pca_fig_gl = px.scatter(
+            pca_result_df_gl,
+            x=pca_1_gl,
+            y=pca_2_gl,
+            color=pca_result_df_gl["labels"],
+        )
+        pca_fig_gl.update_layout(legend_title_text="Sample")
+        pca_fig_gl.update_layout(
+            xaxis_title=f"PC{int(pca_1_gl) + 1}", yaxis_title=f"PC{int(pca_2_gl) + 1}"
+        )
 
         return [
             clean_pqvals.to_json(date_format="iso", orient="split"),
@@ -609,21 +698,6 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, stored_data):
                 ),
                 dbc.Container(
                     [
-                        # dbc.Row(
-                        #     [
-                        #         dbc.Col(
-                        #             [
-                        #                 dbc.Button(
-                        #                     "Download filtered dataset",
-                        #                     id="download_csv_button",
-                        #                 ),
-                        #                 dcc.Download(id="download_filtered_data_csv"),
-                        #             ],
-                        #             width={"offset": 9},
-                        #         )
-                        #     ]
-                        # ),
-                        # html.Br(),
                         dbc.Row(
                             [
                                 dbc.Col(
@@ -638,31 +712,20 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, stored_data):
                                 ),
                             ]
                         ),
-                        # dbc.Row(
-                        #     [
-                        #         dbc.Col(
-                        #             [
-                        #                 dcc.Graph(figure=pca_fig),
-                        #             ]
-                        #         ),
-                        #     ]
-                        # ),
                     ],
-                    # style={
-                    #     "border": "1px solid black",
-                    #     "background": "white",
-                    #     # "border-bottom": "2px solid black",
-                    # },
                 ),
             ],
             {},
             dcc.Graph(figure=gl_heatmap_fig),
+            {},
+            dcc.Graph(figure=pca_fig_gl),
         ]
 
     else:
-        return [[], [], {"visibility": "hidden"}, []]
+        return [[], [], {"visibility": "hidden"}, [], {"visibility": "hidden"}, []]
 
 
+### DOWNLOAD FILTERED DATA ###
 # Download filtered dataset on button click.
 @app.callback(
     Output("download_filtered_data_csv", "data"),
@@ -679,6 +742,9 @@ def func(_, dataset, filename):
     filtered_filename = filename.split(".")[0] + "_filtered.csv"
     # pylint: disable=no-member
     return dcc.send_data_frame(df.to_csv, filtered_filename, index=False)
+
+
+### SAMPLE VS SAMPLE PLOTS ###
 
 
 # Create volcano plot based on selected dropdown feature
@@ -755,7 +821,7 @@ def volcano_plot(first_sample, second_sample, p_option, dataset):
     ]
 
 
-# Create heatmap based on selected dropdown feature
+# Create heatmap based on selected dropdown feature.
 @app.callback(
     [Output("sample_vs_sample_heatmap", "style"), Output("heatmap_plot", "children")],
     [
@@ -840,14 +906,15 @@ def pca(first_sample, second_sample, pca_1, pca_2, dataset):
     df.set_index("unique_id", inplace=True)
     df = df.filter(regex=f"{first_sample}|{second_sample}").T
 
-    # Get sample labels
+    # Get sample labels and length of unique lbls.
     sample_labels = list(df.label)
+    unique_label_len = len(list(set(list(df.label))))
 
     # Drop column
     df = df.drop(columns="label")
 
     # PCA
-    pca = PCA(n_components=6)
+    pca = PCA(n_components=unique_label_len)
     pca_result = pca.fit_transform(df)
     pca_result_df = pd.DataFrame(pca_result)
 
