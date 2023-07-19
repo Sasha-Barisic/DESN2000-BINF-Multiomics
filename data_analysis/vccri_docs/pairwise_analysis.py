@@ -16,6 +16,10 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 import plotly.express as px
 import plotly.graph_objects as go
+import rpy2.robjects as robjects
+from rpy2.robjects import pandas2ri, r
+from rpy2.robjects.packages import importr
+from rpy2.robjects.conversion import localconverter
 
 def checkout_columns(columns: list):
   cols_idx = {}
@@ -103,30 +107,113 @@ def test():
 
 
 def pairwise_comparison():
-    clean_df = test()
-    db1 = clean_df.filter(regex='CZ')
-    db2 = clean_df.filter(regex='CL1')
+    # clean_df = test()
+    df = pd.read_csv('two_samples.csv', sep=',').set_index('unique_id').T
+    df.drop(columns=['label'], inplace=True)
 
-    # Concatenate the data column-wise
-    data = pd.concat([db1, db2], axis=1)
+    # # Convert pd.df to r.df
+    with localconverter(robjects.default_converter + pandas2ri.converter):
+        rdf = robjects.conversion.py2rpy(df)
 
-    # Perform PCA
-    pca = PCA(n_components=2)
-    pca_result = pca.fit_transform(data)
+    robjects.globalenv['rdf'] = rdf
+    robjects.r("library(randomForest)")
+    robjects.r("library(dplyr)")
 
-    # PCA Plot
-    fig_pca = px.scatter(pca_result, x=0, y=1, color=kmeans.labels_, hover_data=[data.index])
-    fig_pca.update_layout(title='PCA')
+    # Define the RF.Anal function in Python
 
-    # Perform K-means clustering
-    kmeans = KMeans(n_clusters=2, random_state=0)
-    kmeans.fit(data)
+    robjects.r(
+        f"""
+        l_rand <- runif(1)
+        rn.sd <- l_rand
+        set.seed(rn.sd)
 
-    # K-means Plot
-    fig_kmeans = px.scatter(pca_result, x=0, y=1, color=kmeans.labels_, hover_data=[data.index])
-    fig_kmeans.update_layout(title='K-means Clustering')
+        rf_out <- randomForest::randomForest(rdf, ntree = 500, mtry = 7, importance = TRUE, proximity = TRUE)
+
+        impmat <- rf_out$importance
+        impmat <- data.frame(MeanDecreaseAccuracy = impmat[, "MeanDecreaseAccuracy"])
+        impmat <- impmat[order(-impmat$MeanDecreaseAccuracy), , drop = FALSE]
+
+        colnames(impmat) <- c("MeanDecreaseAccuracy")
+        rownames(impmat) <- NULL
+
+        print(impmat)
+
+    """
+    )
+
+    # Convert the result to a pandas DataFrame
+
+    # Convert the result to a numpy array
+    rf_table = robjects.globalenv["impmat"]
+    with localconverter(robjects.default_converter + pandas2ri.converter) as cv:
+        np_from_r_df = robjects.conversion.rpy2py(rf_table)
+
+    # Create a pandas DataFrame with appropriate column names
+    column_names = ["MeanDecreaseAccuracy"]
+    variable_importance = pd.DataFrame(np_from_r_df, columns=column_names)
+
+    # Sort the DataFrame by MeanDecreaseAccuracy in descending order
+    variable_importance = variable_importance.sort_values(by=['MeanDecreaseAccuracy'], ascending=False)
+
+    # Plot the variable importance as a scatter plot
+    fig = go.Figure(data=go.Scatter(x=variable_importance['MeanDecreaseAccuracy'], y=variable_importance.index, mode='markers'))
+    fig.update_layout(title='Random Forest Variable Importance', xaxis_title='MeanDecreaseAccuracy', yaxis_title='Variable')
+    fig.show()
+
+    
+
+#--------------------------------------------------------------------------May not be required--------------------------------------------
+    # # Perform PCA
+    # pca = PCA(n_components=2)
+    # pca_result = pca.fit_transform(data)
+
+    # # Perform K-means clustering
+    # kmeans = KMeans(n_clusters=2, random_state=0)
+    # kmeans.fit(data)
+
+    # # PCA Plot
+    # fig_pca = px.scatter(pca_result, x=0, y=1, color=kmeans.labels_, hover_data=[data.index])
+    # fig_pca.update_layout(title='PCA')
+
+    # # K-means Plot
+
+    # # Perform PCA
+    # pca = PCA(n_components=2)
+    # pca_result = pca.fit_transform(data)
+
+    # # Perform K-means clustering
+    # kmeans = KMeans(n_clusters=3)
+    # kmeans.fit(data)
+
+    # # Create a dataframe with the PCA results and K-means labels
+    # df = pd.DataFrame(pca_result, columns=['PC1', 'PC2'])
+    # df['Cluster'] = kmeans.labels_
+
+    # # Format the percentage values for axes labels
+    # percentage_labels = lambda x: f'{x:.2f}%'
+
+    # # Plot K-means results using plotly
+    # fig = px.scatter(df, x='PC1', y='PC2', color='Cluster', 
+    #                 labels={'PC1': 'PC1 ({:.2f}%)'.format(pca.explained_variance_ratio_[0] * 100),
+    #                         'PC2': 'PC2 ({:.2f}%)'.format(pca.explained_variance_ratio_[1] * 100)},
+    #                 title='K-means Clustering')
+    # fig.show()
+
+    # fig_kmeans = px.scatter(pca_result, x=0, y=1, color=kmeans.labels_, hover_data=[data.index])
+    # fig_kmeans.update_layout(title='K-means Clustering')
 
     # # # Create a random forest classifier
+    
+    
+    # db1_cols = list(db1.columns)
+    # db2_cols = list(db2.columns)
+    
+    # db2_modified = db2.rename(columns = {db2_cols[0]:db1_cols[0], db2_cols[1]:db1_cols[1], db2_cols[2]:db1_cols[2]})
+
+    # features = pd.concat([db1, db2_modified], axis=0)
+    # labels = ['CZ'] * len(db1) + ['CL1'] * len(db2)
+
+    
     # forest = RandomForestClassifier()
 
     # # # Fit the classifier to the data
@@ -137,60 +224,19 @@ def pairwise_comparison():
     # fig_rf = go.Figure(data=go.Bar(x=data.columns, y=feature_importances))
     # fig_rf.update_layout(title='Random Forest Feature Importance')
 
-    db1_cols = list(db1.columns)
-    db2_cols = list(db2.columns)
-    
-    db2_modified = db2.rename(columns = {db2_cols[0]:db1_cols[0], db2_cols[1]:db1_cols[1], db2_cols[2]:db1_cols[2]})
+    # rf_classifier = RandomForestClassifier()
+    # rf_classifier.fit(features, labels)
 
-    features = pd.concat([db1, db2_modified], axis=0)
-    labels = ['CZ'] * len(db1) + ['CL1'] * len(db2)
+    # # Extract the main decision tree
+    # main_tree = rf_classifier.estimators_[0]
 
-    rf_classifier = RandomForestClassifier()
-    rf_classifier.fit(features, labels)
+    # # Visualize the main decision tree
+    # plt.figure(figsize=(12, 8))
+    # tree.plot_tree(main_tree, filled=True, rounded=True)
+    # plt.title('Main Decision Tree')
+    # plt.show()
 
-    # Extract the main decision tree
-    main_tree = rf_classifier.estimators_[0]
-
-    # Visualize the main decision tree
-    plt.figure(figsize=(12, 8))
-    tree.plot_tree(main_tree, filled=True, rounded=True)
-    plt.title('Main Decision Tree')
-    plt.show()
-
-    # Volcano Plot
-    fig_volcano = px.scatter(data, x='CZ.1', y='CL1.1', color=kmeans.labels_, hover_data=['CZ.1', 'CL1.1'])
-    fig_volcano.update_layout(title='Volcano Plot')
-
-    # Heatmap
-    fig_heatmap = go.Figure(data=go.Heatmap(z=data.values, x=data.columns, y=data.index))
-    fig_heatmap.update_layout(title='Heatmap')
-
-    # Ortho-PLSDA
-    plsda = PLSRegression(n_components=2)
-    plsda.fit(db1, db2)
-
-    plsda_scores = plsda.transform(db1)
-
-    plt.scatter(plsda_scores[:, 0], plsda_scores[:, 1])
-    plt.xlabel('PLS-DA Component 1')
-    plt.ylabel('PLS-DA Component 2')
-    plt.title('Ortho-PLSDA')
-    plt.show()
-
-    # Display the plots
-    fig_volcano.show()
-    fig_kmeans.show()
-    # fig_rf.show()
-    fig_pca.show()
-    fig_heatmap.show()
-
-    
-    
-    
-    
-    
-    #--------------------------------------------------------------------------May not be required----------------------------
-    # # Step 2: Perform Pairwise Comparisons
+    # # Volcano Plot
     # p_values = []
     # for i in range(len(db1)):
     #     cz_values = db1.iloc[i, :].values
@@ -198,23 +244,40 @@ def pairwise_comparison():
     #     _, p_value = ttest_ind(cz_values, cl1_values)
     #     p_values.append(p_value)
 
-    # # Adjust p-values using the Benjamini-Hochberg method
-    # #adjusted_p_values = multipletests(p_values, method='fdr_bh')[1]
-
-    # # Step 3: Visualize the Data
-
-    # # Volcano Plot
-    # fold_change = np.log2(db1.mean(axis=1) / db2.mean(axis=1))
+    # fold_change = np.log2(db2.mean(axis=1) / db1.mean(axis=1))
     # significance_threshold = 0.05
 
     # volcano_df = pd.DataFrame({'Fold Change': fold_change, 'p-value': p_values})
-    # volcano_df['Significant'] = volcano_df['p-value'] < significance_threshold
+    # volcano_df['Significant'] = (volcano_df['p-value'] < significance_threshold) & (volcano_df['Fold Change'] > 2)
 
-    # plt.scatter(volcano_df['Fold Change'], -np.log10(volcano_df['p-value']), c=volcano_df['Significant'])
-    # plt.xlabel('Fold Change (log2)')
-    # plt.ylabel('-log10(p-value)')
-    # plt.title('Volcano Plot')
+    # # plt.scatter(volcano_df['Fold Change'], -np.log10(volcano_df['p-value']), c=volcano_df['Significant'])
+    # fig_volcano = px.scatter(volcano_df, x=volcano_df['Fold Change'], y=-np.log10(volcano_df['p-value']), labels= {"Fold Change": "log2(FC)",
+    #                  "y": "-log10(p)" }, color=volcano_df['Significant'])
+    # fig_volcano.update_layout(title='Volcano Plot')
+
+    # # Heatmap
+    # fig_heatmap = go.Figure(data=go.Heatmap(z=data.values, x=data.columns, y=data.index))
+    # fig_heatmap.update_layout(title='Heatmap')
+
+    # # Ortho-PLSDA
+    # plsda = PLSRegression(n_components=2)
+    # plsda.fit(db1, db2)
+
+    # plsda_scores = plsda.transform(db1)
+
+    # plt.scatter(plsda_scores[:, 0], plsda_scores[:, 1])
+    # plt.xlabel('PLS-DA Component 1')
+    # plt.ylabel('PLS-DA Component 2')
+    # plt.title('Ortho-PLSDA')
     # plt.show()
+
+    # Display the plots
+    # fig_volcano.show()
+    # fig_kmeans.show()
+    # # fig_rf.show()
+    # fig_pca.show()
+    # fig_heatmap.show()
+
 
     # # RandomForest
 
@@ -261,13 +324,6 @@ def pairwise_comparison():
     # #                 class_names=labels,
     # #                 filled = True)
     # #print(len(features))
-    # #print(len(labels))
-
-    # combined_data = pd.concat([db1, db2], axis=1)
-    
-    # # PCA
-    # pca = PCA(n_components=2)
-    # pca_result = pca.fit_transform(combined_data)
 
     # plt.scatter(pca_result[:, 0], pca_result[:, 1])
     # plt.xlabel('Principal Component 1')
