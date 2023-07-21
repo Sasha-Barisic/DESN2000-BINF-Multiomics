@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 from plotly.subplots import make_subplots
 import scipy
 from scipy import stats
@@ -24,6 +25,8 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from statsmodels.stats.multitest import fdrcorrection
 
+import tempfile
+
 from .clean import clean_first, clean_folder_change, clean_pQ_value
 
 app = DjangoDash(
@@ -34,417 +37,459 @@ app = DjangoDash(
     ],
 )
 
-
-radio = dbc.Container(
+#### TABS ######
+whole_dataset_analysis_layout = dbc.Container(
     [
-        dcc.RadioItems(
-            id="dropdown-color",
-            options=[
-                {"label": c, "value": c.lower()} for c in ["Red", "Green", "Blue"]
-            ],
-            value="red",
+        html.Br(),
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        html.H4("Fulldata Analysis"),
+                    ]
+                )
+            ]
         ),
-    ]
+        html.Br(),
+        dbc.Row(
+            [
+                html.H5("Hierarchical Clustering: Heatmap"),
+                dbc.Col(
+                    [
+                        html.P("Standardization"),
+                        dcc.Dropdown(
+                            options=[
+                                {
+                                    "label": "Autoscale features",
+                                    "value": "column",
+                                },
+                                {
+                                    "label": "Autoscale samples",
+                                    "value": "row",
+                                },
+                                {"label": "None", "value": "none"},
+                            ],
+                            value="none",
+                            id="global_standardization",
+                        ),
+                    ]
+                ),
+                dbc.Col(
+                    [
+                        html.P("Distance measure"),
+                        dcc.Dropdown(
+                            options=[
+                                {
+                                    "label": "Correlation",
+                                    "value": "correlation",
+                                },
+                                {
+                                    "label": "Euclidean",
+                                    "value": "euclidean",
+                                },
+                                {
+                                    "label": "Minkowski",
+                                    "value": "minkowski",
+                                },
+                            ],
+                            value="euclidean",
+                            id="global_distance",
+                        ),
+                    ]
+                ),
+                dbc.Col(
+                    [
+                        html.P("Clustering method"),
+                        dcc.Dropdown(
+                            options=[
+                                {
+                                    "label": "Average",
+                                    "value": "average",
+                                },
+                                {
+                                    "label": "Complete",
+                                    "value": "complete",
+                                },
+                                {
+                                    "label": "Single",
+                                    "value": "single",
+                                },
+                                {
+                                    "label": "Ward",
+                                    "value": "ward",
+                                },
+                            ],
+                            value="ward",
+                            id="global_clustering",
+                        ),
+                    ]
+                ),
+            ],
+        ),
+        html.Br(),
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        html.Div(
+                            dcc.Graph(id="global_heatmap"),
+                        ),
+                    ]
+                ),
+            ]
+        ),
+        html.Br(),
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        html.H5("Principle Component Analysis (PCA)"),
+                    ]
+                )
+            ]
+        ),
+        html.Br(),
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        html.P("X-axis PC"),
+                        dcc.Dropdown(
+                            id="pca_1_dropdown_gl",
+                            options=[],
+                        ),
+                    ],
+                    width={"offset": 2, "size": 2},
+                ),
+                dbc.Col(
+                    [
+                        html.P("Y-axis PC"),
+                        dcc.Dropdown(
+                            id="pca_2_dropdown_gl",
+                            options=[],
+                        ),
+                    ],
+                    width={"offset": 2, "size": 2},
+                ),
+            ]
+        ),
+        html.Br(),
+        dbc.Row([html.Div(dcc.Graph(id="pca_plot_gl"))]),
+    ],
+    id="global_plot_section",
 )
 
 
-### ANALYSIS TAB LAYOUT ###
-analysis_layout = (
+pairwise_analysis_layout = (
     dbc.Container(
         [
-            dcc.Upload(
-                id="upload_data",
-                children=html.Div(
-                    [html.A("Click to upload data.", style={"font-size": "140%"})]
-                ),
-                style={
-                    "width": "100%",
-                    "height": "60px",
-                    "lineHeight": "60px",
-                    "borderWidth": "1px",
-                    "borderStyle": "dashed",
-                    "borderRadius": "5px",
-                    "textAlign": "center",
-                    "margin": "10px",
-                    "background-color": "#D8D8D8",
-                },
-            ),
-            dcc.Store(id="store", storage_type="session"),
-            dcc.Store(id="cleaned_dataset", storage_type="session"),
-            html.Div(id="stored_data_output"),
+            html.Div(id="sample_options"),
             html.Br(),
-            dbc.Container(
+            html.H4("Univariate Analysis"),
+            dbc.Row(
                 [
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                [
-                                    dbc.Button(
-                                        "Download filtered dataset",
-                                        id="download_csv_button",
-                                    ),
-                                    dcc.Download(id="download_filtered_data_csv"),
-                                ],
-                                width={"offset": 9},
-                            )
-                        ]
-                    ),
+                    html.H5("Fold Change (FC) Analysis"),
                     html.Br(),
-                    dbc.Row(
+                    dbc.Col(
                         [
-                            html.Hr(
-                                style={
-                                    "border": "1px solid #000000",
-                                }
-                            ),
-                        ]
-                    ),
-                    html.Br(),
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                [
-                                    html.H4("Fulldata Analysis"),
-                                    html.H5("Hierarchical Clustering: Heatmap"),
-                                ]
-                            )
-                        ]
-                    ),
-                    html.Br(),
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                [
-                                    html.P("Standardization"),
-                                    dcc.Dropdown(
-                                        options=[
-                                            {
-                                                "label": "Autoscale features",
-                                                "value": "column",
-                                            },
-                                            {
-                                                "label": "Autoscale samples",
-                                                "value": "row",
-                                            },
-                                            {"label": "None", "value": "none"},
-                                        ],
-                                        value="none",
-                                        id="global_standardization",
-                                    ),
-                                ]
-                            ),
-                            dbc.Col(
-                                [
-                                    html.P("Distance measure"),
-                                    dcc.Dropdown(
-                                        options=[
-                                            {
-                                                "label": "Correlation",
-                                                "value": "correlation",
-                                            },
-                                            {
-                                                "label": "Euclidean",
-                                                "value": "euclidean",
-                                            },
-                                            {
-                                                "label": "Minkowski",
-                                                "value": "minkowski",
-                                            },
-                                        ],
-                                        value="euclidean",
-                                        id="global_distance",
-                                    ),
-                                ]
-                            ),
-                            dbc.Col(
-                                [
-                                    html.P("Clustering method"),
-                                    dcc.Dropdown(
-                                        options=[
-                                            {
-                                                "label": "Average",
-                                                "value": "average",
-                                            },
-                                            {
-                                                "label": "Complete",
-                                                "value": "complete",
-                                            },
-                                            {
-                                                "label": "Single",
-                                                "value": "single",
-                                            },
-                                            {
-                                                "label": "Ward",
-                                                "value": "ward",
-                                            },
-                                        ],
-                                        value="ward",
-                                        id="global_clustering",
-                                    ),
-                                ]
+                            html.P("Fold change threshold:"),
+                            dbc.Input(
+                                id="fc_value",
+                                type="number",
+                                debounce=True,
+                                min=2.0,
+                                max=5.0,
+                                value=2.0,
                             ),
                         ],
+                        width={"offset": "1", "size": 2},
                     ),
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                [
-                                    html.Div(id="global_heatmap"),
-                                ]
-                            )
-                        ]
-                    ),
-                ],
-                id="global_heatmap_section",
-                style={"visibility": "hidden"},
+                ]
             ),
-            dbc.Container(
-                [
-                    html.H5("Principle Component Analysis (PCA)"),
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                [
-                                    html.P("X-axis PC"),
-                                    dcc.Dropdown(
-                                        id="pca_1_dropdown_gl",
-                                        options=[],
-                                    ),
-                                ],
-                                width={"offset": 2, "size": 2},
-                            ),
-                            dbc.Col(
-                                [
-                                    html.P("Y-axis PC"),
-                                    dcc.Dropdown(
-                                        id="pca_2_dropdown_gl",
-                                        options=[],
-                                    ),
-                                ],
-                                width={"offset": 2, "size": 2},
-                            ),
-                        ]
-                    ),
-                    dbc.Row([html.Div(id="pca_plot_gl")]),
-                ],
-                id="global_pca_dropdown",
-                style={"visibility": "hidden"},
-            ),
-            dcc.Loading(
-                html.Div(id="filtered_dataset"),
-                type="cube",
-                color="red",
-            ),
+            dcc.Graph(id="fc_plot"),
             html.Br(),
-            dbc.Container(
+            html.H5("Volcano Plot"),
+            html.Br(),
+            dbc.Row(
                 [
-                    html.H4("Univariate Analysis"),
-                    html.H5("Volcano Plot"),
-                    dbc.Row(
+                    dbc.Col(
                         [
-                            dbc.Col(
-                                [
-                                    dbc.RadioItems(
-                                        options=[
-                                            {"label": "Raw", "value": "raw"},
-                                            {"label": "FDR", "value": "fdr"},
-                                        ],
-                                        value="raw",
-                                        id="volcano_radioitems",
-                                        inline=True,
-                                    ),
+                            dbc.RadioItems(
+                                options=[
+                                    {"label": "Raw", "value": "raw"},
+                                    {"label": "FDR", "value": "fdr"},
                                 ],
-                                width={"offset": 5},
-                            )
+                                value="raw",
+                                id="volcano_radioitems",
+                                inline=True,
+                            ),
                         ],
-                    ),
-                    html.Div(id="volcano_plot"),
+                        width={"offset": 5},
+                    )
                 ],
-                id="sample_vs_sample_volcano",
-                style={"visibility": "hidden"},
             ),
+            html.Div(dcc.Graph(id="volcano_plot")),
+            html.H4("Cluster Analysis"),
+            html.H5("Hierarchical Clustering: Heatmap"),
             html.Br(),
-            dbc.Container(
+            dbc.Row(
                 [
-                    html.H4("Cluster Analysis"),
-                    html.H5("Hierarchical Clustering: Heatmap"),
-                    dbc.Row(
+                    dbc.Col(
                         [
-                            dbc.Col(
-                                [
-                                    html.P("Standardization"),
-                                    dcc.Dropdown(
-                                        options=[
-                                            {
-                                                "label": "Autoscale features",
-                                                "value": "column",
-                                            },
-                                            {
-                                                "label": "Autoscale samples",
-                                                "value": "row",
-                                            },
-                                            {"label": "None", "value": "none"},
-                                        ],
-                                        value="none",
-                                        id="standardization",
-                                    ),
-                                ]
-                            ),
-                            dbc.Col(
-                                [
-                                    html.P("Distance measure"),
-                                    dcc.Dropdown(
-                                        options=[
-                                            {
-                                                "label": "Correlation",
-                                                "value": "correlation",
-                                            },
-                                            {
-                                                "label": "Euclidean",
-                                                "value": "euclidean",
-                                            },
-                                            {
-                                                "label": "Minkowski",
-                                                "value": "minkowski",
-                                            },
-                                        ],
-                                        value="euclidean",
-                                        id="distance",
-                                    ),
-                                ]
-                            ),
-                            dbc.Col(
-                                [
-                                    html.P("Clustering method"),
-                                    dcc.Dropdown(
-                                        options=[
-                                            {
-                                                "label": "Average",
-                                                "value": "average",
-                                            },
-                                            {
-                                                "label": "Complete",
-                                                "value": "complete",
-                                            },
-                                            {
-                                                "label": "Single",
-                                                "value": "single",
-                                            },
-                                            {
-                                                "label": "Ward",
-                                                "value": "ward",
-                                            },
-                                        ],
-                                        value="ward",
-                                        id="clustering",
-                                    ),
-                                ]
-                            ),
-                        ]
-                    ),
-                    html.Div(id="heatmap_plot"),
-                ],
-                id="sample_vs_sample_heatmap",
-                style={"visibility": "hidden"},
-            ),
-            html.Br(),
-            dbc.Container(
-                [
-                    dbc.Row(
-                        [
-                            html.H5("Partitional Clustering: K-Means"),
-                        ]
-                    ),
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                [
-                                    html.P("Cluster number (max = 6)"),
-                                    dbc.Input(
-                                        id="cluster_value",
-                                        type="number",
-                                        min=0,
-                                        max=6,
-                                        step=1,
-                                        value=2,
-                                    ),
+                            html.P("Standardization"),
+                            dcc.Dropdown(
+                                options=[
+                                    {
+                                        "label": "Autoscale features",
+                                        "value": "column",
+                                    },
+                                    {
+                                        "label": "Autoscale samples",
+                                        "value": "row",
+                                    },
+                                    {"label": "None", "value": "none"},
                                 ],
-                                width={"offset": 2, "size": 2},
+                                value="none",
+                                id="standardization",
                             ),
                         ]
                     ),
-                    html.Br(),
-                    html.Div(id="k_means_plot"),
-                ],
-                id="sample_vs_sample_k_means",
-                style={"visibility": "hidden"},
+                    dbc.Col(
+                        [
+                            html.P("Distance measure"),
+                            dcc.Dropdown(
+                                options=[
+                                    {
+                                        "label": "Correlation",
+                                        "value": "correlation",
+                                    },
+                                    {
+                                        "label": "Euclidean",
+                                        "value": "euclidean",
+                                    },
+                                    {
+                                        "label": "Minkowski",
+                                        "value": "minkowski",
+                                    },
+                                ],
+                                value="euclidean",
+                                id="distance",
+                            ),
+                        ]
+                    ),
+                    dbc.Col(
+                        [
+                            html.P("Clustering method"),
+                            dcc.Dropdown(
+                                options=[
+                                    {
+                                        "label": "Average",
+                                        "value": "average",
+                                    },
+                                    {
+                                        "label": "Complete",
+                                        "value": "complete",
+                                    },
+                                    {
+                                        "label": "Single",
+                                        "value": "single",
+                                    },
+                                    {
+                                        "label": "Ward",
+                                        "value": "ward",
+                                    },
+                                ],
+                                value="ward",
+                                id="clustering",
+                            ),
+                        ]
+                    ),
+                ]
             ),
+            html.Br(),
+            html.Div(dcc.Graph(id="heatmap_plot")),
+            html.Br(),
+            dbc.Row(
+                [
+                    html.H5("Partitional Clustering: K-Means"),
+                ]
+            ),
+            html.Br(),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            html.P("Cluster number (max = 6)"),
+                            dbc.Input(
+                                id="cluster_value",
+                                type="number",
+                                min=0,
+                                max=6,
+                                step=1,
+                                value=2,
+                            ),
+                        ],
+                        width={"offset": 2, "size": 2},
+                    ),
+                ]
+            ),
+            html.Br(),
+            html.Div(dcc.Graph(id="k_means_plot")),
             html.Br(),
             dcc.Store(id="pca_result_store"),
-            dbc.Container(
+            dbc.Row(
                 [
-                    dbc.Row(
-                        [
-                            html.Hr(
-                                style={
-                                    "border": "1px solid #000000",
-                                }
-                            ),
-                            html.H4("Chemometrics Analysis"),
-                            html.H5("Principle Component Analysis (PCA)"),
-                        ]
+                    html.Hr(
+                        style={
+                            "border": "1px solid #000000",
+                        }
                     ),
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                [
-                                    html.P("X-axis PC"),
-                                    dcc.Dropdown(
-                                        id="pca_1_dropdown",
-                                        options=[],
-                                    ),
-                                ],
-                                width={"offset": 2, "size": 2},
-                            ),
-                            dbc.Col(
-                                [
-                                    html.P("Y-axis PC"),
-                                    dcc.Dropdown(
-                                        id="pca_2_dropdown",
-                                        options=[],
-                                    ),
-                                ],
-                                width={"offset": 2, "size": 2},
-                            ),
-                        ]
-                    ),
-                    dbc.Row([html.Div(id="pca_plot")]),
-                ],
-                id="sample_vs_sample_pca_dropdown",
-                style={"visibility": "hidden"},
+                    html.H4("Chemometrics Analysis"),
+                    html.H5("Principle Component Analysis (PCA)"),
+                ]
             ),
-            dbc.Container(
+            html.Br(),
+            dbc.Row(
                 [
-                    dbc.Row(
+                    dbc.Col(
                         [
-                            html.Hr(
-                                style={
-                                    "border": "1px solid #000000",
-                                }
+                            html.P("X-axis PC"),
+                            dcc.Dropdown(
+                                id="pca_1_dropdown",
+                                options=[],
                             ),
-                            html.H4("Classification & Feature Selection"),
-                            html.H5("Random Forest"),
-                        ]
+                        ],
+                        width={"offset": 2, "size": 2},
                     ),
-                    html.Div(id="forest_plot"),
-                ],
-                id="sample_vs_sample_random",
-                style={"visibility": "hidden"},
+                    dbc.Col(
+                        [
+                            html.P("Y-axis PC"),
+                            dcc.Dropdown(
+                                id="pca_2_dropdown",
+                                options=[],
+                            ),
+                        ],
+                        width={"offset": 2, "size": 2},
+                    ),
+                ]
             ),
-        ]
+            html.Br(),
+            dbc.Row([html.Div(dcc.Graph(id="pca_plot"))]),
+            html.Br(),
+            dbc.Row(
+                [
+                    html.Hr(
+                        style={
+                            "border": "1px solid #000000",
+                        }
+                    ),
+                    html.H4("Classification & Feature Selection"),
+                    html.H5("Random Forest"),
+                ]
+            ),
+            html.Div(id="forest_plot"),
+        ],
+        id="sample_vs_sample_plots",
     ),
 )
 
+### ANALYSIS TAB LAYOUT ###
+analysis_layout = dbc.Container(
+    [
+        dcc.Upload(
+            id="upload_data",
+            children=html.Div(
+                [html.A("Click to upload data.", style={"font-size": "140%"})]
+            ),
+            style={
+                "width": "100%",
+                "height": "60px",
+                "lineHeight": "60px",
+                "borderWidth": "1px",
+                "borderStyle": "dashed",
+                "borderRadius": "5px",
+                "textAlign": "center",
+                "margin": "10px",
+                "background-color": "#D8D8D8",
+            },
+        ),
+        dcc.Store(id="store", storage_type="session"),
+        dcc.Store(id="cleaned_dataset", storage_type="session"),
+        html.Div(id="stored_data_output"),
+        html.Br(),
+        dbc.Container(
+            [
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                # dcc.Download(id="download_filtered_data_csv"),
+                                dbc.Button(
+                                    "Download filtered dataset",
+                                    id="download_csv_button",
+                                ),
+                            ],
+                            width={"size": 4},
+                            # width={"offset": 9},
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Button(
+                                    "Download Plots",
+                                    id="download_plots_button",
+                                    style={
+                                        "background-color": "#18bdc2",
+                                        "border": "2px solid #042749",
+                                    },
+                                ),
+                            ],
+                            width={"size": 4},
+                        ),
+                    ],
+                ),
+                dcc.Download(id="download_filtered_data_csv"),
+                dcc.Download(id="download_plots_data"),
+                dcc.Loading(html.Div(id="placeholder_loading"), id=""),
+            ],
+            id="global_buttons",
+            style={"visibility": "hidden"},
+        ),
+        html.Br(),
+        dbc.Container(
+            [
+                dbc.Tabs(
+                    [
+                        dbc.Tab(
+                            whole_dataset_analysis_layout,
+                            label="Whole dataset analysis",
+                            tab_id="whole_tab",
+                            active_label_style={"color": "#DA2310"},
+                            label_style={"color": "#070707"},
+                        ),
+                        dbc.Tab(
+                            pairwise_analysis_layout,
+                            label="Pairwise analysis",
+                            tab_id="pairwise_tab",
+                            active_label_style={"color": "#DA2310"},
+                            label_style={"color": "#070707"},
+                        ),
+                    ],
+                    id="analysis_tabs",
+                    active_tab="whole_tab",
+                    style={
+                        "background-color": "#D8D8D8",
+                    },
+                ),
+            ],
+            id="dashboard_tabs",
+            style={"visibility": "hidden"},
+        ),
+        html.Br(),
+        html.Div(
+            id="output_layout",
+        ),
+    ],
+)
 
 ### APP LAYOUT ###
 app.layout = dbc.Container(
@@ -467,12 +512,7 @@ app.layout = dbc.Container(
         dbc.Tabs(
             [
                 dbc.Tab(
-                    label="Home",
-                    tab_id="home_tab",
-                    active_label_style={"color": "#DA2310"},
-                    label_style={"color": "#070707"},
-                ),
-                dbc.Tab(
+                    analysis_layout,
                     label="Analysis",
                     tab_id="analysis_tab",
                     active_label_style={"color": "#DA2310"},
@@ -480,28 +520,13 @@ app.layout = dbc.Container(
                 ),
             ],
             id="tabs",
-            active_tab="home_tab",
             style={  # "border-bottom": "2px solid black",
                 "background-color": "#D8D8D8",
             },
         ),
-        html.Br(),
-        html.Div(
-            id="output_layout",
-        ),
     ],
     style={"width": "80%"},
 )
-
-
-# Callback to switch between tabs.
-@app.callback(Output("output_layout", "children"), [Input("tabs", "active_tab")])
-def switch_tab(tab_chosen):
-    if tab_chosen == "home_tab":
-        return radio
-    elif tab_chosen == "analysis_tab":
-        return analysis_layout
-
 
 ### UPLOADING AND STORING DATA ###
 
@@ -564,10 +589,22 @@ def store_data(contents, filename):
     ]
 
 
+# Callback to switch between tabs.
+@app.callback(
+    Output("output_layout", "children"),
+    Input("graph_tabs", "active_tab"),
+)
+def switch_tab(tab_chosen):
+    if tab_chosen == "whole_tab":
+        return whole_dataset_analysis_layout
+    elif tab_chosen == "pairwise_tab":
+        return pairwise_analysis_layout
+
+
 ### PCA FOR WHOLE DATASET ###
 
 
-# Callback to dynamically geenrate labels for pca dropwdown.
+# Callback to dynamically generate labels for pca dropwdown.
 @app.callback(
     [
         Output("pca_1_dropdown_gl", "value"),
@@ -588,11 +625,11 @@ def populate_global_pca_dropdown(_):
 @app.callback(
     [
         Output("cleaned_dataset", "data"),
-        Output("filtered_dataset", "children"),
-        Output("global_heatmap_section", "style"),
-        Output("global_heatmap", "children"),
-        Output("global_pca_dropdown", "style"),
-        Output("pca_plot_gl", "children"),
+        Output("sample_options", "children"),
+        Output("global_heatmap", "figure"),
+        Output("pca_plot_gl", "figure"),
+        Output("global_buttons", "style"),
+        Output("dashboard_tabs", "style"),
     ],
     [
         Input("filter_button", "n_clicks"),
@@ -607,6 +644,7 @@ def populate_global_pca_dropdown(_):
 def filter_dataset(clicks, gl_std, gl_dist, gl_cl, pca_1_gl, pca_2_gl, stored_data):
     # This check always works when callback is fired twice,
     # n_clicks is reset to None after uploading another sheet
+
     if clicks is not None:
         # Read in the data stored.
         df = pd.read_json(stored_data, orient="split")
@@ -628,7 +666,7 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, pca_1_gl, pca_2_gl, stored_da
             id="first_sample", options=labels, value=labels[0]["value"]
         )
         dropdown_menu_2 = dcc.Dropdown(
-            id="second_sample", options=labels, value=labels[4]["value"]
+            id="second_sample", options=labels, value=labels[1]["value"]
         )
 
         # Heatmap for whole dataset.
@@ -691,13 +729,9 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, pca_1_gl, pca_2_gl, stored_da
         return [
             clean_pqvals.to_json(date_format="iso", orient="split"),
             [
-                html.Hr(
-                    style={
-                        "border": "1px solid #000000",
-                    }
-                ),
                 dbc.Container(
                     [
+                        html.Br(),
                         dbc.Row(
                             [
                                 dbc.Col(
@@ -715,14 +749,14 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, pca_1_gl, pca_2_gl, stored_da
                     ],
                 ),
             ],
+            gl_heatmap_fig,
+            pca_fig_gl,
             {},
-            dcc.Graph(figure=gl_heatmap_fig),
             {},
-            dcc.Graph(figure=pca_fig_gl),
         ]
 
     else:
-        return [[], [], {"visibility": "hidden"}, [], {"visibility": "hidden"}, []]
+        return [[], [], [], [], {"visibility": "hidden"}, {"visibility": "hidden"}]
 
 
 ### DOWNLOAD FILTERED DATA ###
@@ -747,9 +781,62 @@ def func(_, dataset, filename):
 ### SAMPLE VS SAMPLE PLOTS ###
 
 
+# Create fc plot based on selected dropdown feature
+@app.callback(
+    Output("fc_plot", "figure"),
+    [
+        Input("first_sample", "value"),
+        Input("second_sample", "value"),
+        Input("fc_value", "value"),
+    ],
+    State("cleaned_dataset", "data"),
+)
+def fc_plot(first_sample, second_sample, fc_val, dataset):
+    # Extract from the data the two samples
+    df = pd.read_json(dataset, orient="split")
+    # pylint: disable=no-member
+    df = df.iloc[1:]
+
+    first_df = df.filter(regex=f"{first_sample}").astype(float)
+    second_df = df.filter(regex=f"{second_sample}").astype(float)
+    unique_id_series = df.unique_id
+
+    # Calculate the fold change and set the threshold vlas
+    fold_change = first_df.mean(axis=1) / second_df.mean(axis=1)
+    lower_significance_threshold = 1 / fc_val
+    upper_significance_threshold = fc_val
+
+    fc_df = pd.DataFrame({"Fold Change": fold_change})
+
+    sigs = []
+    for _, row in fc_df.iterrows():
+        if row["Fold Change"] <= lower_significance_threshold:
+            sigs.append("Sig.Down")
+        elif row["Fold Change"] >= upper_significance_threshold:
+            sigs.append("Sig.Up")
+        else:
+            sigs.append("Unsig.")
+
+    fc_df["Significance"] = sigs
+    fc_df["unique_id"] = unique_id_series
+    fc_df["unique_id"] = fc_df["unique_id"].apply(lambda x: x.split("-")[0])
+    fc_df["Fold Change"] = np.log2(fc_df["Fold Change"])
+
+    fc_fig = px.scatter(
+        fc_df,
+        x="unique_id",
+        y="Fold Change",
+        color="Significance",
+        hover_data=["unique_id"],
+        labels={"Fold Change": "log2(FC)", "unique_id": "Unique ID"},
+    )
+
+    return fc_fig
+
+
 # Create volcano plot based on selected dropdown feature
 @app.callback(
-    [Output("sample_vs_sample_volcano", "style"), Output("volcano_plot", "children")],
+    Output("volcano_plot", "figure"),
     [
         Input("first_sample", "value"),
         Input("second_sample", "value"),
@@ -783,6 +870,7 @@ def volcano_plot(first_sample, second_sample, p_option, dataset):
             1
         ]
 
+    ### HEREEEEEEEEEEEEE
     fold_change = np.log2(first_df.mean(axis=1) / second_df.mean(axis=1))
     significance_threshold = 0.05
 
@@ -815,15 +903,12 @@ def volcano_plot(first_sample, second_sample, p_option, dataset):
         y=-math.log10(0.05), line_width=2, line_dash="dash", line_color="black"
     )
 
-    return {}, [
-        html.Br(),
-        dcc.Graph(figure=volcano_fig),
-    ]
+    return volcano_fig
 
 
 # Create heatmap based on selected dropdown feature.
 @app.callback(
-    [Output("sample_vs_sample_heatmap", "style"), Output("heatmap_plot", "children")],
+    Output("heatmap_plot", "figure"),
     [
         Input("first_sample", "value"),
         Input("second_sample", "value"),
@@ -859,10 +944,7 @@ def heatmap(first_sample, second_sample, stand, distance, cluster, dataset):
         height=800,
         width=1100,
     )
-    return {}, [
-        html.Br(),
-        dcc.Graph(figure=heatmap_fig),
-    ]
+    return heatmap_fig
 
 
 @app.callback(
@@ -885,8 +967,8 @@ def populate_pca_dropdown(_):
 @app.callback(
     [
         Output("pca_result_store", "data"),
-        Output("pca_plot", "children"),
-        Output("sample_vs_sample_pca_dropdown", "style"),
+        Output("pca_plot", "figure"),
+        # Output("sample_vs_sample_pca_dropdown", "style"),
     ],
     [
         Input("first_sample", "value"),
@@ -908,13 +990,13 @@ def pca(first_sample, second_sample, pca_1, pca_2, dataset):
 
     # Get sample labels and length of unique lbls.
     sample_labels = list(df.label)
-    unique_label_len = len(list(set(list(df.label))))
+    # unique_label_len = len(list(set(list(df.label))))
 
     # Drop column
     df = df.drop(columns="label")
 
     # PCA
-    pca = PCA(n_components=unique_label_len)
+    pca = PCA(n_components=6)
     pca_result = pca.fit_transform(df)
     pca_result_df = pd.DataFrame(pca_result)
 
@@ -935,17 +1017,13 @@ def pca(first_sample, second_sample, pca_1, pca_2, dataset):
 
     return [
         pca_result_df.to_json(date_format="iso", orient="split"),
-        dcc.Graph(figure=pca_fig),
-        {},
+        pca_fig,
     ]
 
 
 # Create a K-means plot.
 @app.callback(
-    [
-        Output("k_means_plot", "children"),
-        Output("sample_vs_sample_k_means", "style"),
-    ],
+    Output("k_means_plot", "figure"),
     [
         Input("cluster_value", "value"),
         Input("pca_result_store", "data"),
@@ -989,18 +1067,12 @@ def k_means(n_cluster, dataset, clean):
         xaxis_title="PC1", yaxis_title="PC2", legend_title="Clusters"
     )
 
-    return [
-        dcc.Graph(figure=kmeans_fig),
-        {},
-    ]
+    return kmeans_fig
 
 
 # # Create a Random Forest VIP plot.
 @app.callback(
-    [
-        Output("forest_plot", "children"),
-        Output("sample_vs_sample_random", "style"),
-    ],
+    Output("forest_plot", "figure"),
     [
         Input("first_sample", "value"),
         Input("second_sample", "value"),
@@ -1022,12 +1094,8 @@ def random_vip(first_sample, second_sample, dataset):
 
     df.drop(columns=["label"], inplace=True)
 
-    print(sample_labels)
-
-    print(df)
-
     features = df
-    print(features)
+
     # Encode labels
     encoded_labels = LabelEncoder()
     enc_labels = encoded_labels.fit_transform(sample_labels)
@@ -1052,4 +1120,53 @@ def random_vip(first_sample, second_sample, dataset):
 
     forest_fig = px.scatter(y=new_labels, x=np.flip(importances[indices]))
 
-    return dcc.Graph(figure=forest_fig), {}
+    return forest_fig
+
+
+### DOWNLOAD PLOTS ###
+@app.callback(
+    [
+        Output("download_plots_data", "data"),
+        Output("placeholder_loading", "children"),
+    ],
+    [
+        Input("download_plots_button", "n_clicks"),
+    ],
+    [
+        State("global_heatmap", "figure"),
+        State("pca_plot_gl", "figure"),
+        State("volcano_plot", "figure"),
+        State("heatmap_plot", "figure"),
+        State("k_means_plot", "figure"),
+        State("pca_plot", "figure"),
+        State("forest_plot", "figure"),
+    ],
+    prevent_initial_call=True,
+)
+def download_plot_to_pdf(
+    _,
+    gl_heatmap,
+    pca_plot_gl,
+    volcano_plot,
+    heatmap_plot,
+    k_means_plot,
+    pca_plot,
+    forest_plot,
+):
+    """Function to download the main plot figure to a PDF file to the client's
+        machine
+
+    Args:
+        _ (dbc.Button.n_clicks): the "Download Plot" button nclicks attribute that
+        triggers the callback
+        fig (plotly.graph_objects.Figure): Plotly figure that will be downloaded
+
+    Returns:
+        dcc.Download.data : the plot that will be sent ot the Download component
+        for eventual downloading
+    """
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as temp_file:
+        temp_fig = go.Figure(gl_heatmap)
+        pio.write_image(temp_fig, temp_file.name, height=780, width=1200)
+        return dcc.send_file(temp_file.name), ""
