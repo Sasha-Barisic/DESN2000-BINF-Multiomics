@@ -186,6 +186,7 @@ pairwise_analysis_layout = (
             html.Div(id="sample_options"),
             html.Br(),
             html.H4("Univariate Analysis"),
+            html.Br(),
             dbc.Row(
                 [
                     html.H5("Fold Change (FC) Analysis"),
@@ -415,36 +416,52 @@ analysis_layout = dbc.Container(
         ),
         dcc.Store(id="store", storage_type="session"),
         dcc.Store(id="cleaned_dataset", storage_type="session"),
-        html.Div(id="stored_data_output"),
         html.Br(),
         dbc.Container(
             [
+                html.Div(id="spreadsheet_name"),
+                html.Br(),
                 dbc.Row(
                     [
                         dbc.Col(
                             [
                                 # dcc.Download(id="download_filtered_data_csv"),
-                                dbc.Button(
-                                    "Download filtered dataset",
-                                    id="download_csv_button",
+                                # dbc.Button(
+                                #     "Download filtered dataset",
+                                #     id="download_csv_button",
+                                # ),
+                                dbc.ButtonGroup(
+                                    [
+                                        dbc.Button("Filter data", id="filter_button"),
+                                        dbc.Button(
+                                            "Download filtered dataset",
+                                            id="download_csv_button",
+                                            disabled=True,
+                                        ),
+                                        dbc.Button(
+                                            "Download Plots",
+                                            id="download_plots_button",
+                                            disabled=True,
+                                        ),
+                                    ],
                                 ),
                             ],
-                            width={"size": 4},
-                            # width={"offset": 9},
+                            # width={"size": 4},
+                            width={"offset": 3},
                         ),
-                        dbc.Col(
-                            [
-                                dbc.Button(
-                                    "Download Plots",
-                                    id="download_plots_button",
-                                    style={
-                                        "background-color": "#18bdc2",
-                                        "border": "2px solid #042749",
-                                    },
-                                ),
-                            ],
-                            width={"size": 4},
-                        ),
+                        # dbc.Col(
+                        #     [
+                        #         dbc.Button(
+                        #             "Download Plots",
+                        #             id="download_plots_button",
+                        #             style={
+                        #                 "background-color": "#18bdc2",
+                        #                 "border": "2px solid #042749",
+                        #             },
+                        #         ),
+                        #     ],
+                        #     width={"size": 4},
+                        # ),
                     ],
                 ),
                 dcc.Download(id="download_filtered_data_csv"),
@@ -533,7 +550,11 @@ app.layout = dbc.Container(
 
 # Callback to store the data into dcc store
 @app.callback(
-    [Output("store", "data"), Output("stored_data_output", "children")],
+    [
+        Output("store", "data"),
+        Output("global_buttons", "style"),
+        Output("spreadsheet_name", "children"),
+    ],
     Input("upload_data", "contents"),
     State("upload_data", "filename"),
     prevent_initial_call=True,
@@ -559,34 +580,52 @@ def store_data(contents, filename):
 
     return [
         df.to_json(date_format="iso", orient="split"),
-        [
-            dbc.Container(
-                [
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                [
-                                    html.H5(
-                                        f"The uploaded spreadsheet is: {filename}.",
-                                    ),
-                                ],
-                                width={"size": 10},
-                            ),
-                            dbc.Col(
-                                [
-                                    dbc.Button(
-                                        "Filter data",
-                                        id="filter_button",
-                                        style={"background-color": "#DC143C"},
-                                    ),
-                                ]
-                            ),
-                        ]
-                    ),
-                ]
-            ),
-        ],
+        {},
+        dbc.Container(
+            [
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.H5(
+                                    f"The uploaded spreadsheet is: {filename}.",
+                                ),
+                            ],
+                            width={"size": 10},
+                        ),
+                    ]
+                )
+            ]
+        ),
     ]
+    # [
+    #     dbc.Container(
+    #         [
+    #             dbc.Row(
+    #                 [
+    #                     dbc.Col(
+    #                         [
+    #                             html.H5(
+    #                                 f"The uploaded spreadsheet is: {filename}.",
+    #                             ),
+    #                         ],
+    #                         width={"size": 10},
+    #                     ),
+
+    #                     dbc.Col(
+    #                         [
+    #                             dbc.Button(
+    #                                 "Filter data",
+    #                                 id="filter_button",
+    #                                 style={"background-color": "#DC143C"},
+    #                             ),
+    #                         ]
+    #                     ),
+    #                 ]
+    #             ),
+    #         ]
+    #     ),
+    # ],
 
 
 # Callback to switch between tabs.
@@ -628,8 +667,9 @@ def populate_global_pca_dropdown(_):
         Output("sample_options", "children"),
         Output("global_heatmap", "figure"),
         Output("pca_plot_gl", "figure"),
-        Output("global_buttons", "style"),
         Output("dashboard_tabs", "style"),
+        Output("download_csv_button", "disabled"),
+        Output("download_plots_button", "disabled"),
     ],
     [
         Input("filter_button", "n_clicks"),
@@ -695,6 +735,9 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, pca_1_gl, pca_2_gl, stored_da
             ],
         )
 
+        gl_heatmap_fig.update_layout(
+            title="Hierarchical Clustering Heatmap for the whole dataset", title_x=0.5
+        )
         # Create PCA plot for whole dataset.
         # pylint: disable=no-member
         pca_gl_df = clean_pqvals.set_index("unique_id").T
@@ -720,12 +763,13 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, pca_1_gl, pca_2_gl, stored_da
             x=pca_1_gl,
             y=pca_2_gl,
             color=pca_result_df_gl["labels"],
+            title="Principal Component Analaysis (PCA) of the whole dataset",
         )
         pca_fig_gl.update_layout(legend_title_text="Sample")
         pca_fig_gl.update_layout(
             xaxis_title=f"PC{int(pca_1_gl) + 1}", yaxis_title=f"PC{int(pca_2_gl) + 1}"
         )
-
+        pca_fig_gl.update_layout(title_x=0.5)
         return [
             clean_pqvals.to_json(date_format="iso", orient="split"),
             [
@@ -752,11 +796,12 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, pca_1_gl, pca_2_gl, stored_da
             gl_heatmap_fig,
             pca_fig_gl,
             {},
-            {},
+            False,
+            False,
         ]
 
     else:
-        return [[], [], [], [], {"visibility": "hidden"}, {"visibility": "hidden"}]
+        return [[], [], [], [], {"visibility": "hidden"}, True, True]
 
 
 ### DOWNLOAD FILTERED DATA ###
@@ -829,7 +874,9 @@ def fc_plot(first_sample, second_sample, fc_val, dataset):
         color="Significance",
         hover_data=["unique_id"],
         labels={"Fold Change": "log2(FC)", "unique_id": "Unique ID"},
+        title=f"Fold change analysis: {first_sample} vs {second_sample}",
     )
+    fc_fig.update_layout(title_x=0.5)
 
     return fc_fig
 
@@ -896,12 +943,14 @@ def volcano_plot(first_sample, second_sample, p_option, dataset):
         color="Significant",
         hover_data=["unique_id"],
         labels={"Fold Change": "log2(FC)", "p-value": "-log10(p)"},
+        title=f"Volcano plot: {first_sample} vs {second_sample}",
     )
     volcano_fig.add_vline(x=-1, line_width=2, line_dash="dash", line_color="black")
     volcano_fig.add_vline(x=1, line_width=2, line_dash="dash", line_color="black")
     volcano_fig.add_hline(
         y=-math.log10(0.05), line_width=2, line_dash="dash", line_color="black"
     )
+    volcano_fig.update_layout(title_x=0.5)
 
     return volcano_fig
 
@@ -943,6 +992,11 @@ def heatmap(first_sample, second_sample, stand, distance, cluster, dataset):
         color_threshold={"row": 250, "col": 700},
         height=800,
         width=1100,
+    )
+
+    heatmap_fig.update_layout(
+        title=f"Hierarchical Clustering Heatmap: {first_sample} vs {second_sample}",
+        title_x=0.5,
     )
     return heatmap_fig
 
@@ -1009,11 +1063,13 @@ def pca(first_sample, second_sample, pca_1, pca_2, dataset):
         x=pca_1,
         y=pca_2,
         color=pca_result_df["labels"],
+        title=f"Principle Component Analysis (PCA): {first_sample} vs {second_sample}",
     )
     pca_fig.update_layout(legend_title_text="Sample")
     pca_fig.update_layout(
         xaxis_title=f"PC{int(pca_1) + 1}", yaxis_title=f"PC{int(pca_2) + 1}"
     )
+    pca_fig.update_layout(title_x=0.5)
 
     return [
         pca_result_df.to_json(date_format="iso", orient="split"),
@@ -1064,8 +1120,12 @@ def k_means(n_cluster, dataset, clean):
         kmeans_fig.add_trace(tr)
 
     kmeans_fig.update_layout(
-        xaxis_title="PC1", yaxis_title="PC2", legend_title="Clusters"
+        xaxis_title="PC1",
+        yaxis_title="PC2",
+        legend_title="Clusters",
+        title=f"K-means: {n_cluster} clusters",
     )
+    kmeans_fig.update_layout(title_x=0.5)
 
     return kmeans_fig
 
