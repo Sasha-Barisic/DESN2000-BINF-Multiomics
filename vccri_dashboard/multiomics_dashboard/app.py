@@ -138,6 +138,7 @@ whole_dataset_analysis_layout = dbc.Container(
                 ),
             ]
         ),
+        html.Hr(style={"border-top": "2px solid black", "margin": "20px 0"}),
         html.Br(),
         dbc.Row(
             [
@@ -419,49 +420,53 @@ analysis_layout = dbc.Container(
         html.Br(),
         dbc.Container(
             [
-                html.Div(id="spreadsheet_name"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.Div(id="spreadsheet_name"),
+                            ]
+                        )
+                    ]
+                ),
                 html.Br(),
                 dbc.Row(
                     [
                         dbc.Col(
                             [
-                                # dcc.Download(id="download_filtered_data_csv"),
-                                # dbc.Button(
-                                #     "Download filtered dataset",
-                                #     id="download_csv_button",
-                                # ),
                                 dbc.ButtonGroup(
                                     [
-                                        dbc.Button("Filter data", id="filter_button"),
+                                        dbc.Button(
+                                            "Filter data",
+                                            id="filter_button",
+                                            style={
+                                                "background-color": "#D70040",
+                                                "border": "2px solid #042749",
+                                            },
+                                        ),
                                         dbc.Button(
                                             "Download filtered dataset",
                                             id="download_csv_button",
                                             disabled=True,
+                                            style={
+                                                "background-color": "#A9A9A9",
+                                                "border": "2px solid #042749",
+                                            },
                                         ),
                                         dbc.Button(
                                             "Download Plots",
                                             id="download_plots_button",
                                             disabled=True,
+                                            style={
+                                                "background-color": "#A9A9A9",
+                                                "border": "2px solid #042749",
+                                            },
                                         ),
                                     ],
                                 ),
                             ],
-                            # width={"size": 4},
                             width={"offset": 3},
                         ),
-                        # dbc.Col(
-                        #     [
-                        #         dbc.Button(
-                        #             "Download Plots",
-                        #             id="download_plots_button",
-                        #             style={
-                        #                 "background-color": "#18bdc2",
-                        #                 "border": "2px solid #042749",
-                        #             },
-                        #         ),
-                        #     ],
-                        #     width={"size": 4},
-                        # ),
                     ],
                 ),
                 dcc.Download(id="download_filtered_data_csv"),
@@ -471,6 +476,7 @@ analysis_layout = dbc.Container(
             id="global_buttons",
             style={"visibility": "hidden"},
         ),
+        html.Br(),
         html.Br(),
         dbc.Container(
             [
@@ -587,45 +593,17 @@ def store_data(contents, filename):
                     [
                         dbc.Col(
                             [
-                                html.H5(
+                                html.H6(
                                     f"The uploaded spreadsheet is: {filename}.",
                                 ),
                             ],
-                            width={"size": 10},
+                            width={"offset": 3},
                         ),
                     ]
                 )
             ]
         ),
     ]
-    # [
-    #     dbc.Container(
-    #         [
-    #             dbc.Row(
-    #                 [
-    #                     dbc.Col(
-    #                         [
-    #                             html.H5(
-    #                                 f"The uploaded spreadsheet is: {filename}.",
-    #                             ),
-    #                         ],
-    #                         width={"size": 10},
-    #                     ),
-
-    #                     dbc.Col(
-    #                         [
-    #                             dbc.Button(
-    #                                 "Filter data",
-    #                                 id="filter_button",
-    #                                 style={"background-color": "#DC143C"},
-    #                             ),
-    #                         ]
-    #                     ),
-    #                 ]
-    #             ),
-    #         ]
-    #     ),
-    # ],
 
 
 # Callback to switch between tabs.
@@ -670,6 +648,8 @@ def populate_global_pca_dropdown(_):
         Output("dashboard_tabs", "style"),
         Output("download_csv_button", "disabled"),
         Output("download_plots_button", "disabled"),
+        Output("download_csv_button", "style"),
+        Output("download_plots_button", "style"),
     ],
     [
         Input("filter_button", "n_clicks"),
@@ -798,10 +778,34 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, pca_1_gl, pca_2_gl, stored_da
             {},
             False,
             False,
+            {
+                "background-color": "#D70040",
+                "border": "2px solid #042749",
+            },
+            {
+                "background-color": "#D70040",
+                "border": "2px solid #042749",
+            },
         ]
 
     else:
-        return [[], [], [], [], {"visibility": "hidden"}, True, True]
+        return [
+            [],
+            [],
+            [],
+            [],
+            {"visibility": "hidden"},
+            True,
+            True,
+            {
+                "background-color": "#A9A9A9",
+                "border": "2px solid #042749",
+            },
+            {
+                "background-color": "#A9A9A9",
+                "border": "2px solid #042749",
+            },
+        ]
 
 
 ### DOWNLOAD FILTERED DATA ###
