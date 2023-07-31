@@ -234,6 +234,7 @@ pairwise_analysis_layout = (
                 ],
             ),
             html.Div(dcc.Graph(id="volcano_plot")),
+            html.Hr(style={"border-top": "2px solid black", "margin": "20px 0"}),
             html.H4("Cluster Analysis"),
             html.H5("Hierarchical Clustering: Heatmap"),
             html.Br(),
