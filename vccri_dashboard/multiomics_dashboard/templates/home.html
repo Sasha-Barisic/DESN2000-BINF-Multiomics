@@ -1,15 +1,80 @@
 <!-- templates/base.html -->
+{% load static %}
+{% load plotly_dash%}
 <!DOCTYPE html>
 <html>
     <head>
+    <style type="text/css">
+        .header {
+            display: flex;
+            align-items: center; 
+            /* justify-content: space-between; */
+            background: linear-gradient(to right, #9A9A9A, #dc143c);
+            color: white;
 
-    {% load plotly_dash%}
- 
+            /* padding: 10px; */
+        }
+
+        .logo img{
+            height: 15%;
+            width: 20%;
+        }
+
+        .title {
+            flex: 1; /* Expand to fill the available space */
+            display: flex;
+            justify-content: center; /* Horizontally center the content */
+            font-size: 30px;
+        }
+
+        .weblink {
+        text-align: right;
+        }
+
+        .weblink a {
+        color: white;
+        text-decoration: none;
+        }
+        
+        /* .header-image img{ */
+            /* height: 120px; */
+            /* height: 30%; */
+            /* width: 20%; */
+            /* width: 280px; */
+        /* } */
+        /* .header-image{
+            background: linear-gradient(to right, #9A9A9A, #dc143c);
+            margin-bottom: 10px;
+        } */
+        /* .title{
+            color: aliceblue;
+        } */
+        .my-app{
+            height: 100%;
+            width: 100%;
+        }
+    </style>
     {% plotly_header %}
-
-    </head>
+    <header class="header">
+        <div class="logo">
+            <a href="">
+                <img src="{% static "/logo.png" %}" alt="home">
+            </a>
+        </div>
+        <div class="title">Multiomics Dashboard</div>
+        <div class="weblink"><a href="https://github.com/Sasha-Barisic/DESN2000-BINF-Multiomics">GitHub</a></div>
+      </header>
+    <!-- <div class="header-image">
+        <a href="">
+            <img src="{% static "/logo.png" %}" alt="home">
+        </a>
+    </div>
+    <div class="title">
+        <title>Multiomics Dashboard</title> 
+    </div> -->
+</head>
     <body>
-
+        <br></br>
     {%plotly_direct name="SimpleExample"%}
 
     </body>

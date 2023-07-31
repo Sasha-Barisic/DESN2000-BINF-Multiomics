@@ -8,6 +8,7 @@ import dash_bio as dashbio
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 from django_plotly_dash import DjangoDash
+from fpdf import FPDF
 from functools import partial
 import numpy as np
 import pandas as pd
@@ -15,6 +16,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.subplots import make_subplots
+from reportlab.pdfgen import canvas
 import scipy
 from scipy import stats
 from scipy.spatial.distance import pdist
@@ -26,6 +28,7 @@ from sklearn.model_selection import train_test_split
 from statsmodels.stats.multitest import fdrcorrection
 
 import tempfile
+import os
 
 from .clean import clean_first, clean_folder_change, clean_pQ_value
 
@@ -398,6 +401,7 @@ pairwise_analysis_layout = (
 ### ANALYSIS TAB LAYOUT ###
 analysis_layout = dbc.Container(
     [
+        html.Br(),
         dcc.Upload(
             id="upload_data",
             children=html.Div(
@@ -471,7 +475,6 @@ analysis_layout = dbc.Container(
                 ),
                 dcc.Download(id="download_filtered_data_csv"),
                 dcc.Download(id="download_plots_data"),
-                dcc.Loading(html.Div(id="placeholder_loading"), id=""),
             ],
             id="global_buttons",
             style={"visibility": "hidden"},
@@ -517,21 +520,21 @@ analysis_layout = dbc.Container(
 ### APP LAYOUT ###
 app.layout = dbc.Container(
     [
-        dbc.NavbarSimple(
-            children=[
-                dbc.NavItem(
-                    dbc.NavLink(
-                        "Github",
-                        href="https://github.com/Sasha-Barisic/DESN2000-BINF-Multiomics",
-                        style={"color": "white"},
-                    )
-                ),
-            ],
-            brand="Multiomics Dashboard",
-            brand_style={"color": "white"},
-            brand_href="#",
-            color="#dc143c",
-        ),
+        # dbc.NavbarSimple(
+        #     children=[
+        #         dbc.NavItem(
+        #             dbc.NavLink(
+        #                 "Github",
+        #                 href="https://github.com/Sasha-Barisic/DESN2000-BINF-Multiomics",
+        #                 style={"color": "white"},
+        #             )
+        #         ),
+        #     ],
+        #     brand="Multiomics Dashboard",
+        #     brand_style={"color": "white"},
+        #     brand_href="#",
+        #     color="#dc143c",
+        # ),
         dbc.Tabs(
             [
                 dbc.Tab(
@@ -750,6 +753,7 @@ def filter_dataset(clicks, gl_std, gl_dist, gl_cl, pca_1_gl, pca_2_gl, stored_da
             xaxis_title=f"PC{int(pca_1_gl) + 1}", yaxis_title=f"PC{int(pca_2_gl) + 1}"
         )
         pca_fig_gl.update_layout(title_x=0.5)
+
         return [
             clean_pqvals.to_json(date_format="iso", orient="split"),
             [
@@ -1191,7 +1195,6 @@ def random_vip(first_sample, second_sample, dataset):
 @app.callback(
     [
         Output("download_plots_data", "data"),
-        Output("placeholder_loading", "children"),
     ],
     [
         Input("download_plots_button", "n_clicks"),
@@ -1207,16 +1210,7 @@ def random_vip(first_sample, second_sample, dataset):
     ],
     prevent_initial_call=True,
 )
-def download_plot_to_pdf(
-    _,
-    gl_heatmap,
-    pca_plot_gl,
-    volcano_plot,
-    heatmap_plot,
-    k_means_plot,
-    pca_plot,
-    forest_plot,
-):
+def download_plot_to_pdf(*args):
     """Function to download the main plot figure to a PDF file to the client's
         machine
 
@@ -1229,8 +1223,42 @@ def download_plot_to_pdf(
         dcc.Download.data : the plot that will be sent ot the Download component
         for eventual downloading
     """
+    if args[0] is not None:
+        plots = args[1:]
 
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as temp_file:
-        temp_fig = go.Figure(gl_heatmap)
-        pio.write_image(temp_fig, temp_file.name, height=780, width=1200)
-        return dcc.send_file(temp_file.name), ""
+        # Save plots
+        temp_file_paths = []
+        for i, fig in enumerate(plots):
+            temp_file_path = tempfile.NamedTemporaryFile(
+                delete=False, suffix=".png"
+            ).name
+            pio.write_image(fig, temp_file_path, format="png", width=800, height=600)
+            temp_file_paths.append(temp_file_path)
+
+        # PDF generation
+        pdf = FPDF()
+
+        for temp_file_path in temp_file_paths:
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+
+            # Add text and image to the PDF
+            pdf.cell(
+                200,
+                10,
+                txt=f"Plot {temp_file_paths.index(temp_file_path) + 1}",
+                ln=True,
+                align="C",
+            )
+            pdf.image(temp_file_path, x=50, y=20, w=100)
+
+        # Save the PDF
+        pdf_output = "plots.pdf"
+        pdf.output(pdf_output)
+
+        # Remove the temporary image files
+        for temp_file_path in temp_file_paths:
+            os.remove(temp_file_path)
+
+        with open(pdf_output, "rb") as file:
+            return dcc.send_bytes(file.read(), filename=pdf_output)
