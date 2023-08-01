@@ -2,3 +2,9 @@
 *.sqlite3
 *__pycache__
 *.DS_Store
+results/
+in_g.csv
+in.csv
+plots.pdf
+Rplots.pdf
+

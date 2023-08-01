@@ -1,7 +1,9 @@
 import base64
 import io
 import math
+import os
 import re
+import subprocess
 
 from dash import dcc, html, Output, Input, State, ctx
 import dash_bio as dashbio
@@ -28,7 +30,6 @@ from sklearn.model_selection import train_test_split
 from statsmodels.stats.multitest import fdrcorrection
 
 import tempfile
-import os
 
 from .clean import clean_first, clean_folder_change, clean_pQ_value
 
@@ -135,7 +136,10 @@ whole_dataset_analysis_layout = dbc.Container(
                 dbc.Col(
                     [
                         html.Div(
-                            dcc.Graph(id="global_heatmap"),
+                            dbc.Spinner(
+                                dcc.Graph(id="global_heatmap"),
+                                spinner_style={"width": "3rem", "height": "3rem"},
+                            ),
                         ),
                     ]
                 ),
@@ -147,7 +151,7 @@ whole_dataset_analysis_layout = dbc.Container(
             [
                 dbc.Col(
                     [
-                        html.H5("Principle Component Analysis (PCA)"),
+                        html.H5("Principal Component Analysis (PCA)"),
                     ]
                 )
             ]
@@ -178,7 +182,16 @@ whole_dataset_analysis_layout = dbc.Container(
             ]
         ),
         html.Br(),
-        dbc.Row([html.Div(dcc.Graph(id="pca_plot_gl"))]),
+        dbc.Row(
+            [
+                html.Div(
+                    dbc.Spinner(
+                        dcc.Graph(id="pca_plot_gl"),
+                        spinner_style={"width": "3rem", "height": "3rem"},
+                    )
+                )
+            ]
+        ),
     ],
     id="global_plot_section",
 )
@@ -313,7 +326,9 @@ pairwise_analysis_layout = (
                 ]
             ),
             html.Br(),
-            html.Div(dcc.Graph(id="heatmap_plot")),
+            dbc.Spinner(
+                html.Div(dcc.Graph(id="heatmap_plot")),
+            ),
             html.Br(),
             dbc.Row(
                 [
@@ -329,6 +344,7 @@ pairwise_analysis_layout = (
                             dbc.Input(
                                 id="cluster_value",
                                 type="number",
+                                debounce=True,
                                 min=0,
                                 max=6,
                                 step=1,
@@ -351,7 +367,7 @@ pairwise_analysis_layout = (
                         }
                     ),
                     html.H4("Chemometrics Analysis"),
-                    html.H5("Principle Component Analysis (PCA)"),
+                    html.H5("Principal Component Analysis (PCA)"),
                 ]
             ),
             html.Br(),
@@ -380,20 +396,37 @@ pairwise_analysis_layout = (
                 ]
             ),
             html.Br(),
-            dbc.Row([html.Div(dcc.Graph(id="pca_plot"))]),
+            dbc.Spinner(
+                dbc.Row([html.Div(dcc.Graph(id="pca_plot"))]),
+            ),
             html.Br(),
             dbc.Row(
                 [
-                    html.Hr(
-                        style={
-                            "border": "1px solid #000000",
-                        }
-                    ),
-                    html.H4("Classification & Feature Selection"),
-                    html.H5("Random Forest"),
+                    html.H5("Orthogonal Partial Least Squares (orthoPLS-DA)"),
                 ]
             ),
-            html.Div(id="forest_plot"),
+            dbc.Spinner(
+                html.Div(dcc.Graph(id="ortho_score_plot")),
+            ),
+            dbc.Spinner(
+                html.Div(dcc.Graph(id="ortho_vip_plot")),
+            ),
+            html.Br(),
+            html.Hr(
+                style={
+                    "border": "1px solid #000000",
+                }
+            ),
+            html.H4("Classification and Feature Selection"),
+            dbc.Row(
+                html.H5("Random Forest"),
+            ),
+            dbc.Spinner(
+                html.Div(dcc.Graph(id="forest_class_plot")),
+            ),
+            dbc.Spinner(
+                html.Div(dcc.Graph(id="forest_imp_plot")),
+            ),
         ],
         id="sample_vs_sample_plots",
     ),
@@ -459,6 +492,7 @@ analysis_layout = dbc.Container(
                                             },
                                         ),
                                         dbc.Button(
+                                            # [dbc.Spinner(size="sm"), "Download Plots"],
                                             "Download Plots",
                                             id="download_plots_button",
                                             disabled=True,
@@ -468,6 +502,18 @@ analysis_layout = dbc.Container(
                                             },
                                         ),
                                     ],
+                                ),
+                                html.Br(),
+                                html.Br(),
+                                html.Br(),
+                                dbc.Spinner(
+                                    html.Div(
+                                        id="download_loading_placeholder",
+                                        style={
+                                            "display": "none",
+                                            "margin-right": "70px",
+                                        },
+                                    ),
                                 ),
                             ],
                             width={"offset": 3},
@@ -521,21 +567,26 @@ analysis_layout = dbc.Container(
 ### APP LAYOUT ###
 app.layout = dbc.Container(
     [
-        # dbc.NavbarSimple(
-        #     children=[
-        #         dbc.NavItem(
-        #             dbc.NavLink(
-        #                 "Github",
-        #                 href="https://github.com/Sasha-Barisic/DESN2000-BINF-Multiomics",
-        #                 style={"color": "white"},
-        #             )
-        #         ),
-        #     ],
-        #     brand="Multiomics Dashboard",
-        #     brand_style={"color": "white"},
-        #     brand_href="#",
-        #     color="#dc143c",
-        # ),
+        dbc.Row(
+            children=[
+                dbc.Col(
+                    width=4,
+                    children=[
+                        html.H3(
+                            children="Multiomics Dashboard",
+                            style={"textAlign": "center", "margin-top": "3px"},
+                        ),
+                        html.H6(
+                            "A dashboard for the analysis of mass spectrometry data",
+                            id="title",
+                            style={"textAlign": "center"},
+                        ),
+                    ],
+                )
+            ],
+            justify="center",
+        ),
+        html.Br(),
         dbc.Tabs(
             [
                 dbc.Tab(
@@ -1072,7 +1123,7 @@ def pca(first_sample, second_sample, pca_1, pca_2, dataset):
         x=pca_1,
         y=pca_2,
         color=pca_result_df["labels"],
-        title=f"Principle Component Analysis (PCA): {first_sample} vs {second_sample}",
+        title=f"Principal Component Analysis (PCA): {first_sample} vs {second_sample}",
     )
     pca_fig.update_layout(legend_title_text="Sample")
     pca_fig.update_layout(
@@ -1096,6 +1147,7 @@ def pca(first_sample, second_sample, pca_1, pca_2, dataset):
     [
         State("cleaned_dataset", "data"),
     ],
+    prevent_initial_call=True,
 )
 def k_means(n_cluster, dataset, clean):
     # Extract from the data the two samples
@@ -1139,16 +1191,20 @@ def k_means(n_cluster, dataset, clean):
     return kmeans_fig
 
 
-# # Create a Random Forest VIP plot.
 @app.callback(
-    Output("forest_plot", "figure"),
+    [
+        Output("ortho_score_plot", "figure"),
+        Output("ortho_vip_plot", "figure"),
+        Output("forest_class_plot", "figure"),
+        Output("forest_imp_plot", "figure"),
+    ],
     [
         Input("first_sample", "value"),
         Input("second_sample", "value"),
         Input("cleaned_dataset", "data"),
     ],
 )
-def random_vip(first_sample, second_sample, dataset):
+def ortho_rf_plots(first_sample, second_sample, dataset):
     # Read in data and filter for the two samples.
     # pylint: disable=no-member
     df = pd.read_json(dataset, orient="split")
@@ -1156,46 +1212,81 @@ def random_vip(first_sample, second_sample, dataset):
         "unique_id",
     )
 
-    df = df.filter(regex=f"{first_sample}|{second_sample}").T
-    sample_labels = list(df.label)
-    unique_ids = list(df.columns)
-    unique_ids.remove("label")
+    df = df.filter(regex=f"{first_sample}|{second_sample}")
 
-    df.drop(columns=["label"], inplace=True)
-
-    features = df
-
-    # Encode labels
-    encoded_labels = LabelEncoder()
-    enc_labels = encoded_labels.fit_transform(sample_labels)
-
-    # Split the data into training and test sets
-    X_train, X_test, y_train, y_test = train_test_split(
-        features, enc_labels, test_size=0.2, random_state=42
+    df.drop(labels="label").to_csv("./multiomics_dashboard/components/r/in.csv")
+    df[:1].T.to_csv(
+        "./multiomics_dashboard/components/r/in_g.csv",
     )
-    # Random Forest Classifier
-    forest = RandomForestClassifier(n_estimators=500)
-    forest.fit(X_train, y_train)
-    results = forest.predict_proba(X_test)
 
-    # Feature Importances
-    importances = forest.feature_importances_
-    indices = np.argsort(importances)[::-1]
-    feature_names = features.columns
+    # Run R scipts to generate Orthogonal and Random Forest plots
+    subprocess.run(
+        ["Rscript", "./multiomics_dashboard/components/r/plsda.r"],
+        stdout=open(os.devnull, "w"),
+    )
+    subprocess.run(
+        ["Rscript", "./multiomics_dashboard/components/r/random_forest.r"],
+        stdout=open(os.devnull, "w"),
+    )
 
-    new_labels = []
-    for i in range(len(unique_ids)):
-        new_labels.append(unique_ids[indices[i]].split("-")[0])
+    # Orthogonal Score Plot
+    df_ortho_score = pd.read_csv(
+        "./multiomics_dashboard/components/r/results/ortho/score.csv"
+    )
+    ortho_score_fig = px.scatter(
+        x=df_ortho_score.p1,
+        y=df_ortho_score.o1,
+        color=df_ortho_score.group,
+    )
+    ortho_score_fig.update_layout(
+        title=f"Orthogonal Score Plot - {first_sample} vs {second_sample}", title_x=0.5
+    )
+    ortho_score_fig.update_xaxes(title_text="T Score")
+    ortho_score_fig.update_yaxes(title_text="Orthogonal T Score")
+    ortho_score_fig.add_hline(y=0, line_width=2, line_dash="dash", line_color="black")
+    ortho_score_fig.add_vline(x=0, line_width=2, line_dash="dash", line_color="black")
 
-    forest_fig = px.scatter(y=new_labels, x=np.flip(importances[indices]))
+    # Orthogonal VIP Plot
+    df_ortho_vip = pd.read_csv(
+        "./multiomics_dashboard/components/r/results/ortho/vip.csv"
+    )
+    ortho_vip_fig = px.scatter(
+        x=df_ortho_vip.VIP,
+        y=df_ortho_vip.G.apply(lambda x: x.split("-")[0]),
+    )
+    ortho_vip_fig.update_layout(
+        title=f"Orthogonal VIP Plot - {first_sample} vs {second_sample}", title_x=0.5
+    )
+    ortho_vip_fig.update_xaxes(title_text="VIP")
+    ortho_vip_fig.update_yaxes(title_text="")
 
-    return forest_fig
+    # Random Forest Classification Plot
+    df_rf_class = pd.read_csv(
+        "./multiomics_dashboard/components/r/results/rf/class.csv"
+    )
+    rf_class_fig = px.line(df_rf_class, x="ntree", y="Error", color="Type")
+    rf_class_fig.update_layout(title=f"Random Forest Classification", title_x=0.5)
+
+    # Random Forest Importance Plot
+    df_rf_imp = pd.read_csv("./multiomics_dashboard/components/r/results/rf/imp.csv")
+    df_rf_imp.columns = ["ids", "MeanDecreaseAccuracy", "MeanDecreaseGini"]
+    rf_imp_fig = px.scatter(
+        x=df_rf_imp.sort_values("MeanDecreaseAccuracy").MeanDecreaseAccuracy,
+        y=df_rf_imp.sort_values("MeanDecreaseAccuracy").ids,
+    )
+
+    rf_imp_fig.update_layout(title=f"Random Forest Feature Importance", title_x=0.5)
+    rf_imp_fig.update_xaxes(title_text="MeanDecreaseAccuracy", row=1, col=1)
+    rf_imp_fig.update_yaxes(title_text="")
+
+    return [ortho_score_fig, ortho_vip_fig, rf_class_fig, rf_imp_fig]
 
 
 ### DOWNLOAD PLOTS ###
 @app.callback(
     [
         Output("download_plots_data", "data"),
+        Output("download_loading_placeholder", "children"),
     ],
     [
         Input("download_plots_button", "n_clicks"),
@@ -1207,7 +1298,10 @@ def random_vip(first_sample, second_sample, dataset):
         State("heatmap_plot", "figure"),
         State("k_means_plot", "figure"),
         State("pca_plot", "figure"),
-        State("forest_plot", "figure"),
+        State("ortho_score_plot", "figure"),
+        State("ortho_vip_plot", "figure"),
+        State("forest_class_plot", "figure"),
+        State("forest_imp_plot", "figure"),
     ],
     prevent_initial_call=True,
 )
@@ -1251,7 +1345,7 @@ def download_plot_to_pdf(*args):
                 ln=True,
                 align="C",
             )
-            pdf.image(temp_file_path, x=50, y=20, w=100)
+            pdf.image(temp_file_path, x=10, y=20, w=200, h=200)
 
         # Save the PDF
         pdf_output = "plots.pdf"
@@ -1262,4 +1356,4 @@ def download_plot_to_pdf(*args):
             os.remove(temp_file_path)
 
         with open(pdf_output, "rb") as file:
-            return dcc.send_bytes(file.read(), filename=pdf_output)
+            return [dcc.send_bytes(file.read(), filename=pdf_output), []]
