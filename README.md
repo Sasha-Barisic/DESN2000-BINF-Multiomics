@@ -5,18 +5,23 @@ This project is a collaboration with the scientific software engineers and metab
 
 ## Prerequisites
 - Python 3.11.2
+- R version 4.3.0
 
 ## Setting up the development environment.
 * Create a virtual environment
 ```
     python3 -m venv .venv
     source .venv/bin/activate
+
 ```
 
 * Install the requirements.
 ```
     pip3 install -r equirements.txt
+    Rscript DESN2000-BINF-Multiomics/vccri_dashboard/multiomics_dashboard/components/r/install_packages.r
 ```
+> Note: locate the path of the `install_packages.r` file and replace it. 
+
 * Navigate to the "vccri_dashboard" folder and run the following commands (these must be ran once only, for configuration purposes):
 ```
     python manage.py makemigrations
