@@ -456,6 +456,8 @@ analysis_layout = dbc.Container(
         dcc.Store(id="store", storage_type="session"),
         dcc.Store(id="cleaned_dataset", storage_type="session"),
         html.Br(),
+        html.Div(id="invalid_filename"),
+        html.Br(),
         dbc.Container(
             [
                 dbc.Row(
@@ -615,6 +617,7 @@ app.layout = dbc.Container(
         Output("store", "data"),
         Output("global_buttons", "style"),
         Output("spreadsheet_name", "children"),
+        Output("invalid_filename", "children"),
     ],
     Input("upload_data", "contents"),
     State("upload_data", "filename"),
@@ -628,6 +631,8 @@ def store_data(contents, filename):
     # If uploaded file isn't a CSV, print error message
     if not re.search(".csv", str(filename)):
         return [
+            None,
+            {"visibility": "hidden"},
             None,
             html.H5(
                 "Invalid file format. Please upload a CSV file.", style={"color": "red"}
@@ -658,6 +663,7 @@ def store_data(contents, filename):
                 )
             ]
         ),
+        None,
     ]
 
 
