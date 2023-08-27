@@ -1227,11 +1227,11 @@ def ortho_rf_plots(first_sample, second_sample, dataset):
 
     # Run R scipts to generate Orthogonal and Random Forest plots
     subprocess.run(
-        ["Rscript", "./multiomics_dashboard/components/r/plsda.r"],
+        ["Rscript", "/app/vccri_dashboard/multiomics_dashboard/components/r/plsda.r"],
         stdout=open(os.devnull, "w"),
     )
     subprocess.run(
-        ["Rscript", "./multiomics_dashboard/components/r/random_forest.r"],
+        ["Rscript", "/app/vccri_dashboard/multiomics_dashboard/components/r/random_forest.r"],
         stdout=open(os.devnull, "w"),
     )
 
